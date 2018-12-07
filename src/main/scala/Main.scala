@@ -33,62 +33,92 @@ object Main extends App{
 //      .groupBy("SESSION_ID").agg(collect_list("SKU_NUM").alias("SKU"))
 //  data.show()
 
-  val data1 = data.groupBy("SESSION_ID").agg(collect_list("SKU_NUM").alias("SKU"))
+//  val data1 = data.groupBy("SESSION_ID").agg(collect_list("SKU_NUM").alias("SKU"))
 
+  val skuCount = data.select("SKU_NUM").distinct().count().toInt
   val skuIndexer = new StringIndexer().setInputCol("SKU_NUM").setOutputCol("SKU_INDEX").setHandleInvalid("keep")
   val labelIndexer = new StringIndexer().setInputCol("out").setOutputCol("label").setHandleInvalid("keep")
   val oheIndexer = new OneHotEncoder().setInputCol("SKU_INDEX").setOutputCol("item")
   val pipeline = new Pipeline().setStages(Array(skuIndexer, oheIndexer))
+
+  val skuIndexerModel = skuIndexer.fit(data)
+
+  val data1 = skuIndexerModel.transform(data)
+    .withColumn("SKU_INDEX", col("SKU_INDEX")+1)
+
+
+  data1.show()
+  data1.printSchema()
+
+  val data2 = data1.groupBy("SESSION_ID").agg(collect_list("SKU_INDEX").alias("item"))
+
+  data2.show()
+  data2.printSchema()
+
 //  val pipelineModel = pipeline.fit(data)
 
-  val skuPadding = Array.fill[Double](200)(0)
-  val skuPadding1 = Array.fill[Array[Double]](5)(skuPadding)
+  val skuPadding = Array.fill[Double](5)(0.0)
 
-  val word2Vec = new Word2Vec().setInputCol("SKU").setOutputCol("Vec").setVectorSize(200).setMinCount(0)
-  val vecModel = word2Vec.fit(data1)
-  vecModel.write.overwrite().save("./modelFiles/skuEmbedding")
-  val result = vecModel.transform(data1)
-  result.show()
-
-  val lookUp = vecModel.getVectors.withColumnRenamed("word", "SKU_NUM")
-  lookUp.show()
-  lookUp.printSchema()
-
-  val data2 = data.join(lookUp, Seq("SKU_NUM"))
-  data2.show()
-
-  import spark.implicits._
-  val data3 = data2
-    .groupBy("SESSION_ID").agg(collect_list("vector").alias("item"), collect_list("SKU_NUM").alias("sku"))
-      .rdd.map(r => {
-//    val session = r.getAs[String]("SESSION_ID")
-    val item = r.getAs[mutable.WrappedArray[DenseVector]]("item").array.map(x=>x.toArray)
-    val item1 = skuPadding1 ++ item
+  val data3 = data2.rdd.map(r => {
+    val item = r.getAs[mutable.WrappedArray[Double]]("item").array
+    val item1 = skuPadding ++ item
     val item2 = item1.takeRight(6)
-    val label = r.getAs[mutable.WrappedArray[String]]("sku").array.takeRight(1).head
+    val label = item2.takeRight(1).head
     val features = item2.dropRight(1)
     (features, label)
   })
-    .toDF("SKU", "out")
 
-  val labelIndexerModel = labelIndexer.fit(data3)
-  val data4 = labelIndexerModel.transform(data3)
-    .withColumn("label", col("label") + 1)
 
-  val outSize = data4.select("label").distinct().count().toInt
-
-  val trainSample = data4.rdd.map(r => {
-    val label = Tensor[Double](T(r.getAs[Double]("label")))
-    val array = r.getAs[mutable.WrappedArray[mutable.WrappedArray[Double]]]("SKU").array.map(x=>x.toArray)
-    val vec = Tensor(array.flatten, Array(5, 200))
-    Sample(vec, label)
-  })
-
-  println("Sample feature print: "+ trainSample.take(1).head.feature())
-  println("Sample label print: " + trainSample.take(1).head.label())
-
-  val rnn = new RecRNN()
-  val model = rnn.buildModel(outSize)
-  rnn.train(model, trainSample, "./modelFiles/rnnModel", 4)
+  val outSize = data3.map(_._2).distinct().count().toInt
+//
+//
+////  val skuPadding1 = Array.fill[Array[Double]](5)(skuPadding)
+////
+////  val word2Vec = new Word2Vec().setInputCol("SKU").setOutputCol("Vec").setVectorSize(200).setMinCount(0)
+////  val vecModel = word2Vec.fit(data1)
+////  vecModel.write.overwrite().save("./modelFiles/skuEmbedding")
+////  val result = vecModel.transform(data1)
+////  result.show()
+////
+////  val lookUp = vecModel.getVectors.withColumnRenamed("word", "SKU_NUM")
+////  lookUp.show()
+////  lookUp.printSchema()
+////
+////  val data2 = data.join(lookUp, Seq("SKU_NUM"))
+////  data2.show()
+////
+////  import spark.implicits._
+////  val data3 = data2
+////    .groupBy("SESSION_ID").agg(collect_list("vector").alias("item"), collect_list("SKU_NUM").alias("sku"))
+////      .rdd.map(r => {
+//////    val session = r.getAs[String]("SESSION_ID")
+////    val item = r.getAs[mutable.WrappedArray[DenseVector]]("item").array.map(x=>x.toArray)
+////    val item1 = skuPadding1 ++ item
+////    val item2 = item1.takeRight(6)
+////    val label = r.getAs[mutable.WrappedArray[String]]("sku").array.takeRight(1).head
+////    val features = item2.dropRight(1)
+////    (features, label)
+////  })
+////    .toDF("SKU", "out")
+////
+////  val labelIndexerModel = labelIndexer.fit(data3)
+////  val data4 = labelIndexerModel.transform(data3)
+////    .withColumn("label", col("label") + 1)
+////
+////  val outSize = data4.select("label").distinct().count().toInt
+////
+//  val trainSample = data2.map(r => {
+//    val label = Tensor[Double](T(r._2))
+//    val array = r._1
+//    val vec = Tensor(array, Array(5))
+//    Sample(vec, label)
+//  })
+//
+//  println("Sample feature print: "+ trainSample.take(1).head.feature())
+//  println("Sample label print: " + trainSample.take(1).head.label())
+//
+//  val rnn = new RecRNN()
+//  val model = rnn.buildModel(outSize, skuCount)
+//  rnn.train(model, trainSample, "./modelFiles/rnnModel", 4)
 
 }

@@ -16,18 +16,17 @@ import com.intel.analytics.bigdl.nn._
   */
 class RecRNN {
 
-  def buildModel(numClasses: Int) = {
+  def buildModel(numClasses: Int, skuCount: Int) = {
     val model = Sequential[Double]()
 
     model
 //      .add(Select(2, -1))
-//      .add(LookupTable[Double](200, 100))
+      .add(LookupTable[Double](skuCount, 200))
       .add(TemporalConvolution(200, 150, 3))
       .add(ReLU())
       .add(TemporalMaxPooling(3))
       .add(Dropout(0.2))
       .add(BiRecurrent[Double](JoinTable[Double](2, 2).asInstanceOf[AbstractModule[Table, Tensor[Double], Double]]).add(GRU(150, 100)))
-//      .add(Recurrent[Double]().add(GRU(200, 100)))
       .add(Select(2, -1))
       .add(Linear[Double](200, numClasses))
       .add(LogSoftMax())
