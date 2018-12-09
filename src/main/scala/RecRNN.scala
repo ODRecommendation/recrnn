@@ -70,8 +70,8 @@ class RecRNN {
 
     val trained_model = optimizer
       .setOptimMethod(rmsp)
-      .setTrainSummary(new TrainSummary("./modelFiles", "recRNNTrainingSum"))
-      .setValidationSummary(new ValidationSummary("./modelFiles", "recRNNValidationSum"))
+//      .setTrainSummary(new TrainSummary("./modelFiles", "recRNNTrainingSum"))
+//      .setValidationSummary(new ValidationSummary("./modelFiles", "recRNNValidationSum"))
       .setValidation(Trigger.everyEpoch, testRDD, Array(new Top1Accuracy[Double]()), batchSize)
       .setEndWhen(Trigger.maxEpoch(maxEpoch))
       .optimize()

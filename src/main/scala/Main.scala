@@ -81,6 +81,6 @@ object Main extends App{
 
   val rnn = new RecRNN()
   val model = rnn.buildModel(outSize, skuCount)
-  rnn.train(model, trainSample, "./modelFiles/rnnModel", 4, 3)
+  rnn.train(model, trainSample, "./modelFiles/rnnModel", 3, 4)
 
 }
