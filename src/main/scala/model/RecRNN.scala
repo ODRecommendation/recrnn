@@ -9,8 +9,7 @@ import com.intel.analytics.bigdl.tensor.Tensor
 import com.intel.analytics.bigdl.utils.{Shape, Table}
 import org.apache.spark.rdd.RDD
 import com.intel.analytics.bigdl.nn._
-
-/**
+ /**
   * Created by luyangwang on Dec, 2018
   *
   */
@@ -21,7 +20,9 @@ class RecRNN {
 
     model
 //      .add(Select(2, -1))
+      .add(AddConstant(1))
       .add(LookupTable[Double](skuCount, 200))
+//      .add(Narrow(2, 2))
       .add(TemporalConvolution(200, 150, 3))
       .add(ReLU())
       .add(TemporalMaxPooling(3))
@@ -32,10 +33,10 @@ class RecRNN {
       .add(LogSoftMax())
 
 //    model
-//        .add(Flatten(Shape(Array(1, 5, 98))))
-//        .add(Embedding(98, 50))
-//        .add(GRU(50))
-//        .add(Dense(numClasses, "sigmoid"))
+////        .add(Flatten(Shape(Array(1, 5, 98))))
+//        .add(Embedding(skuCount, 200, inputShape = Shape(10)))
+//        .add(GRU(200))
+//        .add(Dense(numClasses, activation = "sigmoid"))
 
     model
   }
@@ -51,13 +52,12 @@ class RecRNN {
     val adagrad = new Adagrad[Double]()
     val loss = new ClassNLLCriterion[Double]()
 
-    //    val loss = new BCECriterion[Float]()
-    //    model.compile(
-    //      rmsp,
-    //      loss
-    ////      Array(new Loss[Float]().asInstanceOf[ValidationMethod[Float]])
-    //    )
-    //    model.fit(train, batchSize)
+//      model.compile(
+//        rmsp,
+//        loss
+//  //      Array(new Loss[Float]().asInstanceOf[ValidationMethod[Float]])
+//      )
+//      model.fit(train, batchSize)
 
     val split = train.randomSplit(Array(0.8, 0.2), 100)
     val trainRDD = split(0)

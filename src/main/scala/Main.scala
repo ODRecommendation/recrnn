@@ -1,5 +1,6 @@
 import com.intel.analytics.bigdl.dataset.Sample
-import com.intel.analytics.bigdl.tensor.Tensor
+import com.intel.analytics.bigdl.nn.LookupTable
+import com.intel.analytics.bigdl.tensor.{Storage, Tensor}
 import com.intel.analytics.bigdl.utils.T
 import com.intel.analytics.zoo.common.NNContext
 import model.RecRNN
@@ -11,6 +12,7 @@ import org.apache.spark.ml.linalg.{DenseVector, SparseVector}
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.functions._
 
+import collection.JavaConverters._
 import scala.collection.mutable
 
 /**
@@ -50,28 +52,39 @@ object Main extends App{
   data1.show()
   data1.printSchema()
 
-  val data2 = data1.groupBy("SESSION_ID").agg(collect_list("SKU_INDEX").alias("item"))
+  val data2 = data1.groupBy("SESSION_ID")
+    .agg(collect_list("SKU_INDEX").alias("item"), collect_list("SKU_NUM").alias("SKU"))
 
   data2.show()
   data2.printSchema()
 
 //  val pipelineModel = pipeline.fit(data)
 
-  val skuPadding = Array.fill[Double](5)(0.0)
+  val skuPadding = Array.fill[Double](10)(0.0)
 
+  import spark.implicits._
   val data3 = data2.rdd.map(r => {
-    val item = r.getAs[mutable.WrappedArray[Double]]("item").array
+    val item = r.getAs[mutable.WrappedArray[java.lang.Double]]("item").array.map(_.doubleValue())
+    val labelRaw = r.getAs[mutable.WrappedArray[String]]("SKU").array
     val item1 = skuPadding ++ item
-    val item2 = item1.takeRight(6)
-    val label = item2.takeRight(1).head
+    val item2 = item1.takeRight(11)
+    val label = labelRaw.takeRight(1).head
     val features = item2.dropRight(1)
+    (features, label)
+  }).toDF("features", "out")
+
+  val labelIndexerModel = labelIndexer.fit(data3)
+
+  val data4 = labelIndexerModel.transform(data3).rdd.map(r => {
+    val features = r.getAs[mutable.WrappedArray[java.lang.Double]]("features").array.map(_.doubleValue())
+    val label = r.getAs[Double]("label") + 1.0
     (features, label)
   })
 
+  val outSize = data4.map(_._2).distinct().count().toInt
 
-  val outSize = data3.map(_._2).distinct().count().toInt
-//
-//
+  println(outSize)
+
 ////  val skuPadding1 = Array.fill[Array[Double]](5)(skuPadding)
 ////
 ////  val word2Vec = new Word2Vec().setInputCol("SKU").setOutputCol("Vec").setVectorSize(200).setMinCount(0)
@@ -107,18 +120,22 @@ object Main extends App{
 ////
 ////  val outSize = data4.select("label").distinct().count().toInt
 ////
-//  val trainSample = data2.map(r => {
-//    val label = Tensor[Double](T(r._2))
-//    val array = r._1
-//    val vec = Tensor(array, Array(5))
-//    Sample(vec, label)
-//  })
-//
-//  println("Sample feature print: "+ trainSample.take(1).head.feature())
-//  println("Sample label print: " + trainSample.take(1).head.label())
-//
-//  val rnn = new RecRNN()
-//  val model = rnn.buildModel(outSize, skuCount)
-//  rnn.train(model, trainSample, "./modelFiles/rnnModel", 4)
+  val trainSample = data4.map(r => {
+    val label = Tensor[Double](T(r._2))
+    val array = r._1
+    val vec = Tensor(Storage(array), 1, Array(10))
+    Sample(vec, label)
+  })
+
+  println("Sample feature print: "+ trainSample.take(1).head.feature())
+  println("Sample label print: " + trainSample.take(1).head.label())
+
+//  val layer = LookupTable[Double](skuCount, 200)
+//  val input = Tensor(Storage(Array(5.0f, 2.0f, 6.0f, 9.0f, 4.0f)), 1, Array(5))
+
+
+  val rnn = new RecRNN()
+  val model = rnn.buildModel(outSize, skuCount)
+  rnn.train(model, trainSample, "./modelFiles/rnnModel", 4)
 
 }
