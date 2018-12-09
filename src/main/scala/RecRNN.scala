@@ -1,14 +1,13 @@
-package model
-
+import com.intel.analytics.bigdl.Module
 import com.intel.analytics.bigdl.dataset.Sample
 import com.intel.analytics.bigdl.nn.ClassNLLCriterion
 import com.intel.analytics.bigdl.nn.abstractnn.AbstractModule
 //import com.intel.analytics.bigdl.nn.keras._
+import com.intel.analytics.bigdl.nn._
 import com.intel.analytics.bigdl.optim._
 import com.intel.analytics.bigdl.tensor.Tensor
-import com.intel.analytics.bigdl.utils.{Shape, Table}
+import com.intel.analytics.bigdl.utils.Table
 import org.apache.spark.rdd.RDD
-import com.intel.analytics.bigdl.nn._
 
 /**
   * Created by luyangwang on Dec, 2018
@@ -16,7 +15,7 @@ import com.intel.analytics.bigdl.nn._
   */
 class RecRNN {
 
-  def buildModel(numClasses: Int) = {
+  def buildModel(numClasses: Int): Sequential[Double] = {
     val model = Sequential[Double]()
 
     model
@@ -45,8 +44,9 @@ class RecRNN {
              model: Sequential[Double],
              train: RDD[Sample[Double]],
              modelPath: String,
+             maxEpoch: Int,
              batchSize: Int
-           ) = {
+           ): Module[Double] = {
 
     val rmsp = new RMSprop[Double]()
     val adagrad = new Adagrad[Double]()
@@ -72,15 +72,14 @@ class RecRNN {
 
     val trained_model = optimizer
       .setOptimMethod(rmsp)
-      //      .setTrainSummary(new TrainSummary("./modelFiles", "stemCellTrainingSum"))
-      //      .setValidationSummary(new ValidationSummary("./modelFiles", "stemCellValidationSum"))
+      //      .setTrainSummary(new TrainSummary("./modelFiles", "recRNNTrainingSum"))
+      //      .setValidationSummary(new ValidationSummary("./modelFiles", "recRNNValidationSum"))
       .setValidation(Trigger.everyEpoch, testRDD, Array(new Top1Accuracy[Double]()), batchSize)
-      .setEndWhen(Trigger.maxEpoch(3))
+      .setEndWhen(Trigger.maxEpoch(maxEpoch))
       .optimize()
 
-    trained_model.saveModule(modelPath, null, true)
+    trained_model.saveModule(modelPath, null, overWrite = true)
 
-    //    putS3Obj(bucketName, "stemCell/ModelFiles/commentRNN", modelPath)
     println("model has been saved")
 
     trained_model

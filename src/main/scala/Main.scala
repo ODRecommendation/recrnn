@@ -2,7 +2,6 @@ import com.intel.analytics.bigdl.dataset.Sample
 import com.intel.analytics.bigdl.tensor.Tensor
 import com.intel.analytics.bigdl.utils.T
 import com.intel.analytics.zoo.common.NNContext
-import model.RecRNN
 import org.apache.log4j.{Level, Logger}
 import org.apache.spark.SparkConf
 import org.apache.spark.ml.Pipeline
@@ -89,6 +88,6 @@ object Main extends App{
 
   val rnn = new RecRNN()
   val model = rnn.buildModel(outSize)
-  rnn.train(model, trainSample, "./modelFiles/rnnModel", 4)
+  rnn.train(model, trainSample, "./modelFiles/rnnModel", 3, 4)
 
 }
