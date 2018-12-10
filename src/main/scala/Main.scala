@@ -24,10 +24,12 @@ object Main extends App{
     .set("spark.driver.memory", "100g")
   val sc = NNContext.initNNContext(conf)
   val spark = SparkSession.builder().config(conf).getOrCreate()
-
-  val data = spark.read.options(Map("header" -> "true", "delimiter" -> "|")).csv("./modelFiles/recRNNsample.csv")
+//  val path = "s3://ecomdatascience/RecRNN"
+  val path = "./modelFiles"
+  val data = spark.read.options(Map("header" -> "true", "delimiter" -> "|")).csv(path+"/recRNN.csv")
 
   val skuCount = data.select("SKU_NUM").distinct().count().toInt
+  println(skuCount)
   val skuIndexer = new StringIndexer().setInputCol("SKU_NUM").setOutputCol("SKU_INDEX").setHandleInvalid("keep")
   val labelIndexer = new StringIndexer().setInputCol("out").setOutputCol("label").setHandleInvalid("keep")
 
@@ -36,14 +38,17 @@ object Main extends App{
   val data1 = skuIndexerModel.transform(data)
     .withColumn("SKU_INDEX", col("SKU_INDEX")+1)
 
-  data1.show()
+  data1.show(20,false)
   data1.printSchema()
 
   val data2 = data1.groupBy("SESSION_ID")
     .agg(collect_list("SKU_INDEX").alias("item"), collect_list("SKU_NUM").alias("SKU"))
 
-  data2.show()
+  data2.show(false)
   data2.printSchema()
+  println(data2.count())
+  data2.na.drop()
+  println(data2.count())
 
   val skuPadding = Array.fill[Double](10)(0.0)
 
@@ -57,6 +62,8 @@ object Main extends App{
     val features = item2.dropRight(1)
     (features, label)
   }).toDF("features", "out")
+ data3.show(false)
+  data3.printSchema()
 
   val labelIndexerModel = labelIndexer.fit(data3)
 
@@ -81,6 +88,7 @@ object Main extends App{
 
   val rnn = new RecRNN()
   val model = rnn.buildModel(outSize, skuCount)
-  rnn.train(model, trainSample, "./modelFiles/rnnModel", 3, 4)
+//  rnn.train(model, trainSample, path+"/rnnModel", 10, 126400)
+  rnn.train(model, trainSample, path+"/rnnModel", 4, 8)
 
 }
