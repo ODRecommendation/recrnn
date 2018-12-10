@@ -49,7 +49,9 @@ class RecRNN {
 
     val rmsp = new RMSprop[Double]()
     val adagrad = new Adagrad[Double]()
-    val loss = new ClassNLLCriterion[Double]()
+//    val loss = new ClassNLLCriterion[Double]()
+    val loss = new CrossEntropyCriterion[Double]()
+
 
 //      model.compile(
 //        rmsp,
@@ -72,7 +74,7 @@ class RecRNN {
       .setOptimMethod(rmsp)
 //      .setTrainSummary(new TrainSummary("./modelFiles", "recRNNTrainingSum"))
 //      .setValidationSummary(new ValidationSummary("./modelFiles", "recRNNValidationSum"))
-      .setValidation(Trigger.everyEpoch, testRDD, Array(new Top1Accuracy[Double]()), batchSize)
+      .setValidation(Trigger.everyEpoch, testRDD, Array(new Top5Accuracy[Double]()), batchSize)
       .setEndWhen(Trigger.maxEpoch(maxEpoch))
       .optimize()
 

@@ -46,12 +46,13 @@ object Main extends App{
   data2.printSchema()
 
   val skuPadding = Array.fill[Double](10)(0.0)
+  val bcPadding = sc.broadcast(skuPadding).value
 
   import spark.implicits._
   val data3 = data2.rdd.map(r => {
     val item = r.getAs[mutable.WrappedArray[java.lang.Double]]("item").array.map(_.doubleValue())
     val labelRaw = r.getAs[mutable.WrappedArray[String]]("SKU").array
-    val item1 = skuPadding ++ item
+    val item1 = bcPadding ++ item
     val item2 = item1.takeRight(11)
     val label = labelRaw.takeRight(1).head
     val features = item2.dropRight(1)
@@ -81,6 +82,6 @@ object Main extends App{
 
   val rnn = new RecRNN()
   val model = rnn.buildModel(outSize, skuCount)
-  rnn.train(model, trainSample, "./modelFiles/rnnModel", 3, 4)
+  rnn.train(model, trainSample, "./modelFiles/rnnModel", 100, 8)
 
 }
