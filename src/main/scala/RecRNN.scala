@@ -20,14 +20,14 @@ class RecRNN {
 
     model
       .add(AddConstant(1))
-      .add(LookupTable[Double](skuCount, 200))
-      .add(TemporalConvolution(200, 150, 3))
+      .add(LookupTable[Double](skuCount, 300))
+      .add(TemporalConvolution(300, 250, 3))
       .add(ReLU())
       .add(TemporalMaxPooling(3))
       .add(Dropout(0.2))
-      .add(BiRecurrent[Double](JoinTable[Double](2, 2).asInstanceOf[AbstractModule[Table, Tensor[Double], Double]]).add(GRU(150, 100)))
+      .add(BiRecurrent[Double](JoinTable[Double](2, 2).asInstanceOf[AbstractModule[Table, Tensor[Double], Double]]).add(GRU(250, 200)))
       .add(Select(2, -1))
-      .add(Linear[Double](200, numClasses))
+      .add(Linear[Double](400, numClasses))
       .add(LogSoftMax())
 
 //    model
