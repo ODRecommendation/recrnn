@@ -1,3 +1,5 @@
+import breeze.linalg.{max, min}
+import breeze.numerics.{floor, pow}
 import com.intel.analytics.bigdl.Module
 import com.intel.analytics.bigdl.dataset.Sample
 import com.intel.analytics.bigdl.nn.{Sequential => _, _}
@@ -19,12 +21,14 @@ class RecRNN {
   def buildModel(numClasses: Int, skuCount: Int, maxLength: Int): Sequential[Double] = {
     val model = Sequential[Double]()
     val branches = Concat[Double](2)
+    val embedOutDim = max(floor(pow(skuCount,1 / 4)), 10)
+    println("embedOutDim: " + embedOutDim.toString)
 
     var embedWidth = 0
     (1 to maxLength).foreach { _ =>
-      val lookupTable = LookupTable[Double](skuCount, 50)
+      val lookupTable = LookupTable[Double](skuCount, embedOutDim)
       lookupTable.setWeightsBias(
-        Array(Tensor[Double](skuCount, 50).randn(0, 0.1)))
+        Array(Tensor[Double](skuCount, embedOutDim).randn(0, 0.1)))
       branches.add(
         Sequential[Double]()
           .add(Select[Double](2, 1 + embedWidth))
@@ -36,7 +40,7 @@ class RecRNN {
 
     model
       .add(branches)
-      .add(BiRecurrent[Double](JoinTable[Double](2, 2).asInstanceOf[AbstractModule[Table, Tensor[Double], Double]]).add(GRU(50, 200)))
+      .add(BiRecurrent[Double](JoinTable[Double](2, 2).asInstanceOf[AbstractModule[Table, Tensor[Double], Double]]).add(GRU(embedOutDim, 200)))
       .add(Dropout(0.2))
       .add(Select(2, -1))
       .add(Linear[Double](400, numClasses))
@@ -67,7 +71,7 @@ class RecRNN {
       .setOptimMethod(new RMSprop[Double]())
 //      .setTrainSummary(new TrainSummary("./modelFiles", "recRNNTrainingSum"))
 //      .setValidationSummary(new ValidationSummary("./modelFiles", "recRNNValidationSum"))
-      .setValidation(Trigger.everyEpoch, testRDD, Array(new Top1Accuracy[Double]()), batchSize)
+      .setValidation(Trigger.maxEpoch(maxEpoch), testRDD, Array(new Top1Accuracy[Double]()), batchSize)
       .setEndWhen(Trigger.maxEpoch(maxEpoch))
       .optimize()
 
