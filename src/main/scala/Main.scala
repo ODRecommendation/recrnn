@@ -56,29 +56,55 @@ object Main extends App{
   val skuPadding1 = Array.fill[Array[Double]](maxLength)(skuPadding)
   val bcPadding = sc.broadcast(skuPadding1).value
 
-  val data3 = data2.rdd.map(r => {
-    val item = r.getAs[mutable.WrappedArray[SparseVector]]("item").array.map(_.toArray)
-    val sku = r.getAs[mutable.WrappedArray[java.lang.Double]]("sku").array.map(_.toDouble)
-    val item1 = bcPadding ++ item
-    val item2 = item1.takeRight(maxLength+1)
-    val label = sku.takeRight(1).head
-    val features = item2.dropRight(1)
-    (features, label)
-  })
+//  val data3 = data2.rdd.map(r => {
+//    val item = r.getAs[mutable.WrappedArray[SparseVector]]("item").array.map(_.toArray)
+//    val sku = r.getAs[mutable.WrappedArray[java.lang.Double]]("sku").array.map(_.toDouble)
+//    val item1 = bcPadding ++ item
+//    val item2 = item1.takeRight(maxLength + 1)
+//    val label = sku.takeRight(1).head
+//    val features = item2.dropRight(1)
+//    (features, label)
+//  })
 
-  val outSize = data3.map(_._2).max.toInt
+  def prePadding: mutable.WrappedArray[SparseVector] => Array[Array[Double]] = x => {
+    val maxLength = 5
+    val skuPadding = Array.fill[Double](inputLayer)(0.0)
+    val skuPadding1 = Array.fill[Array[Double]](maxLength)(skuPadding)
+    val item = skuPadding1 ++ x.array.map(_.toArray)
+    val item2 = item.takeRight(maxLength + 1)
+    val item3 = item2.dropRight(1)
+    item3
+  }
+
+  def getLabel: mutable.WrappedArray[java.lang.Double] => Double = x => {
+    x.takeRight(1).head
+  }
+
+
+  val prePaddingUDF = udf(prePadding)
+  val getLabelUDF = udf(getLabel)
+
+  val data3 = data2
+    .withColumn("features", prePaddingUDF(col("item")))
+    .withColumn("label", getLabelUDF(col("sku")))
+
+  data3.show()
+  data3.printSchema()
+
+
+  val outSize = data3.rdd.map(_.getAs[Double]("label")).max.toInt
   println(outSize)
 
-  val trainSample = data3.map(r => {
-    val label = Tensor[Double](T(r._2))
-    val array = r._1.flatten
-    val vec = Tensor(array, Array(maxLength, inputLayer))
+  val trainSample = data3.rdd.map(r => {
+    val label = Tensor[Double](T(r.getAs[Double]("label")))
+    val array = r.getAs[mutable.WrappedArray[mutable.WrappedArray[java.lang.Double]]]("features").array.flatten
+    val vec = Tensor(array.map(_.toDouble), Array(maxLength, inputLayer))
     Sample(vec, label)
   })
 
   println("Sample feature print: "+ trainSample.take(1).head.feature())
   println("Sample label print: " + trainSample.take(1).head.label())
-
+//
   val rnn = new RecRNN()
   val model = rnn.buildModel(outSize, skuCount, maxLength)
   rnn.train(model, trainSample, "./modelFiles/rnnModel", 10, 8)
