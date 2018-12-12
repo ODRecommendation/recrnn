@@ -15,10 +15,26 @@ import scala.collection.mutable
   * Created by luyangwang on Dec, 2018
   *
   */
+
+case class ModelParams(
+                 maxLength: Int,
+                 maxEpoch: Int,
+                 batchSize: Int,
+                 dataPath: String,
+                 modelPath: String
+                 )
+
 object Main extends App{
 
   Logger.getLogger("org").setLevel(Level.WARN)
 
+  val params = ModelParams(
+    maxLength = 5,
+    maxEpoch = 10,
+    batchSize = 8,
+    dataPath = "./modelFiles/recRNNsample.csv",
+    modelPath = "./modelFiles/rnnModel"
+  )
   val conf = new SparkConf()
     .setAppName("stemCell")
     .setMaster("local[*]")
@@ -26,7 +42,7 @@ object Main extends App{
   val sc = NNContext.initNNContext(conf)
   val spark = SparkSession.builder().config(conf).getOrCreate()
 
-  val data = spark.read.options(Map("header" -> "true", "delimiter" -> "|")).csv("./modelFiles/recRNNsample.csv")
+  val data = spark.read.options(Map("header" -> "true", "delimiter" -> "|")).csv(params.dataPath)
 
   val skuCount = data.select("SKU_NUM").distinct().count().toInt
   val skuIndexer = new StringIndexer().setInputCol("SKU_NUM").setOutputCol("SKU_INDEX").setHandleInvalid("keep")
@@ -34,7 +50,7 @@ object Main extends App{
   val labelIndexer = new StringIndexer().setInputCol("out").setOutputCol("label").setHandleInvalid("keep")
   val ohe = new OneHotEncoder().setInputCol("SKU_INDEX").setOutputCol("vectors")
 
-  val data1a = skuIndexerModel.transform(data).withColumn("SKU_INDEX", col("SKU_INDEX")+1)
+  val data1a = skuIndexerModel.transform(data).withColumn("SKU_INDEX", col("SKU_INDEX") + 1)
   val data1 = ohe.transform(data1a)
 
   data1.show()
@@ -51,23 +67,12 @@ object Main extends App{
   data2.printSchema()
   data2.show()
 
-  val maxLength = 5
   val skuPadding = Array.fill[Double](inputLayer)(0.0)
-  val skuPadding1 = Array.fill[Array[Double]](maxLength)(skuPadding)
+  val skuPadding1 = Array.fill[Array[Double]](params.maxLength)(skuPadding)
   val bcPadding = sc.broadcast(skuPadding1).value
 
-//  val data3 = data2.rdd.map(r => {
-//    val item = r.getAs[mutable.WrappedArray[SparseVector]]("item").array.map(_.toArray)
-//    val sku = r.getAs[mutable.WrappedArray[java.lang.Double]]("sku").array.map(_.toDouble)
-//    val item1 = bcPadding ++ item
-//    val item2 = item1.takeRight(maxLength + 1)
-//    val label = sku.takeRight(1).head
-//    val features = item2.dropRight(1)
-//    (features, label)
-//  })
-
   def prePadding: mutable.WrappedArray[SparseVector] => Array[Array[Double]] = x => {
-    val maxLength = 5
+    val maxLength = params.maxLength
     val skuPadding = Array.fill[Double](inputLayer)(0.0)
     val skuPadding1 = Array.fill[Array[Double]](maxLength)(skuPadding)
     val item = skuPadding1 ++ x.array.map(_.toArray)
@@ -79,7 +84,6 @@ object Main extends App{
   def getLabel: mutable.WrappedArray[java.lang.Double] => Double = x => {
     x.takeRight(1).head
   }
-
 
   val prePaddingUDF = udf(prePadding)
   val getLabelUDF = udf(getLabel)
@@ -98,7 +102,7 @@ object Main extends App{
   val trainSample = data3.rdd.map(r => {
     val label = Tensor[Double](T(r.getAs[Double]("label")))
     val array = r.getAs[mutable.WrappedArray[mutable.WrappedArray[java.lang.Double]]]("features").array.flatten
-    val vec = Tensor(array.map(_.toDouble), Array(maxLength, inputLayer))
+    val vec = Tensor(array.map(_.toDouble), Array(params.maxLength, inputLayer))
     Sample(vec, label)
   })
 
@@ -106,7 +110,7 @@ object Main extends App{
   println("Sample label print: " + trainSample.take(1).head.label())
 //
   val rnn = new RecRNN()
-  val model = rnn.buildModel(outSize, skuCount, maxLength)
-  rnn.train(model, trainSample, "./modelFiles/rnnModel", 10, 8)
+  val model = rnn.buildModel(outSize, skuCount, params.maxLength)
+  rnn.train(model, trainSample, params.modelPath, params.maxEpoch, params.batchSize)
 
 }
