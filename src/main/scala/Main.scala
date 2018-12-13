@@ -20,6 +20,7 @@ case class ModelParams(
                  maxLength: Int,
                  maxEpoch: Int,
                  batchSize: Int,
+                 embedOutDim: Int,
                  dataPath: String,
                  modelPath: String
                  )
@@ -32,6 +33,7 @@ object Main extends App{
     maxLength = 5,
     maxEpoch = 10,
     batchSize = 8,
+    embedOutDim = 10,
     dataPath = "./modelFiles/recRNNsample.csv",
     modelPath = "./modelFiles/rnnModel"
   )
@@ -67,22 +69,22 @@ object Main extends App{
   data2.printSchema()
   data2.show()
 
-  val skuPadding = Array.fill[Double](inputLayer)(0.0)
-  val skuPadding1 = Array.fill[Array[Double]](params.maxLength)(skuPadding)
+  val skuPadding = Array.fill[Float](inputLayer)(0)
+  val skuPadding1 = Array.fill[Array[Float]](params.maxLength)(skuPadding)
   val bcPadding = sc.broadcast(skuPadding1).value
 
-  def prePadding: mutable.WrappedArray[SparseVector] => Array[Array[Double]] = x => {
+  def prePadding: mutable.WrappedArray[SparseVector] => Array[Array[Float]] = x => {
     val maxLength = params.maxLength
-    val skuPadding = Array.fill[Double](inputLayer)(0.0)
-    val skuPadding1 = Array.fill[Array[Double]](maxLength)(skuPadding)
-    val item = skuPadding1 ++ x.array.map(_.toArray)
+    val skuPadding = Array.fill[Float](inputLayer)(0)
+    val skuPadding1 = Array.fill[Array[Float]](maxLength)(skuPadding)
+    val item = skuPadding1 ++ x.array.map(_.toArray.map(_.toFloat))
     val item2 = item.takeRight(maxLength + 1)
     val item3 = item2.dropRight(1)
     item3
   }
 
-  def getLabel: mutable.WrappedArray[java.lang.Double] => Double = x => {
-    x.takeRight(1).head
+  def getLabel: mutable.WrappedArray[java.lang.Double] => Float = x => {
+    x.takeRight(1).head.floatValue()
   }
 
   val prePaddingUDF = udf(prePadding)
@@ -96,13 +98,13 @@ object Main extends App{
   data3.printSchema()
 
 
-  val outSize = data3.rdd.map(_.getAs[Double]("label")).max.toInt
+  val outSize = data3.rdd.map(_.getAs[Float]("label")).max.toInt
   println(outSize)
 
   val trainSample = data3.rdd.map(r => {
-    val label = Tensor[Double](T(r.getAs[Double]("label")))
-    val array = r.getAs[mutable.WrappedArray[mutable.WrappedArray[java.lang.Double]]]("features").array.flatten
-    val vec = Tensor(array.map(_.toDouble), Array(params.maxLength, inputLayer))
+    val label = Tensor[Float](T(r.getAs[Float]("label")))
+    val array = r.getAs[mutable.WrappedArray[mutable.WrappedArray[Float]]]("features").array.flatten
+    val vec = Tensor(array, Array(params.maxLength, inputLayer))
     Sample(vec, label)
   })
 
@@ -110,7 +112,7 @@ object Main extends App{
   println("Sample label print: " + trainSample.take(1).head.label())
 //
   val rnn = new RecRNN()
-  val model = rnn.buildModel(outSize, skuCount, params.maxLength)
+  val model = rnn.buildModel(outSize, skuCount, params.maxLength, params.embedOutDim)
   rnn.train(model, trainSample, params.modelPath, params.maxEpoch, params.batchSize)
 
 }
