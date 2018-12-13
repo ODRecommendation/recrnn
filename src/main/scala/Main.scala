@@ -65,6 +65,7 @@ object Main extends App{
 
   val data2 = data1.groupBy("SESSION_ID")
     .agg(collect_list("vectors").alias("item"), collect_list("SKU_INDEX").alias("sku"))
+    .filter(col("sku").isNotNull && col("item").isNotNull)
 
   data2.printSchema()
   data2.show()
