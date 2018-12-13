@@ -1,12 +1,8 @@
-import breeze.linalg.{max, min}
-import breeze.numerics.{floor, pow}
 import com.intel.analytics.bigdl.Module
 import com.intel.analytics.bigdl.dataset.Sample
-import com.intel.analytics.bigdl.nn.{Sequential => _, _}
 import com.intel.analytics.bigdl.nn.abstractnn.AbstractModule
-import com.intel.analytics.bigdl.visualization.{TrainSummary, ValidationSummary}
+import com.intel.analytics.bigdl.nn.{Sequential => _}
 //import com.intel.analytics.bigdl.nn.keras._
-import com.intel.analytics.bigdl.utils.Shape
 import com.intel.analytics.bigdl.nn._
 import com.intel.analytics.bigdl.optim._
 import com.intel.analytics.bigdl.tensor.Tensor

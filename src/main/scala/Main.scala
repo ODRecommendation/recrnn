@@ -27,6 +27,7 @@ case class ModelParams(
 
 object Main extends App{
 
+  /*Construct BigDL session*/
   Logger.getLogger("org").setLevel(Level.WARN)
 
   val params = ModelParams(
@@ -44,6 +45,7 @@ object Main extends App{
   val sc = NNContext.initNNContext(conf)
   val spark = SparkSession.builder().config(conf).getOrCreate()
 
+  /*One hot encode each item*/
   val data = spark.read.options(Map("header" -> "true", "delimiter" -> "|")).csv(params.dataPath)
 
   val skuCount = data.select("SKU_NUM").distinct().count().toInt
@@ -63,6 +65,7 @@ object Main extends App{
 
   println(inputLayer)
 
+  /*Collect item to sequence*/
   val data2 = data1.groupBy("SESSION_ID")
     .agg(collect_list("vectors").alias("item"), collect_list("SKU_INDEX").alias("sku"))
     .filter(col("sku").isNotNull && col("item").isNotNull)
@@ -74,6 +77,7 @@ object Main extends App{
   val skuPadding1 = Array.fill[Array[Float]](params.maxLength)(skuPadding)
   val bcPadding = sc.broadcast(skuPadding1).value
 
+  /*Pad items to equal length*/
   def prePadding: mutable.WrappedArray[SparseVector] => Array[Array[Float]] = x => {
     val maxLength = params.maxLength
     val skuPadding = Array.fill[Float](inputLayer)(0)
@@ -102,6 +106,7 @@ object Main extends App{
   val outSize = data3.rdd.map(_.getAs[Float]("label")).max.toInt
   println(outSize)
 
+  /*Dataframe to tensor*/
   val trainSample = data3.rdd.map(r => {
     val label = Tensor[Float](T(r.getAs[Float]("label")))
     val array = r.getAs[mutable.WrappedArray[mutable.WrappedArray[Float]]]("features").array.flatten
@@ -111,7 +116,8 @@ object Main extends App{
 
   println("Sample feature print: "+ trainSample.take(1).head.feature())
   println("Sample label print: " + trainSample.take(1).head.label())
-//
+
+  /*Train rnn model*/
   val rnn = new RecRNN()
   val model = rnn.buildModel(outSize, skuCount, params.maxLength, params.embedOutDim)
   rnn.train(model, trainSample, params.modelPath, params.maxEpoch, params.batchSize)
