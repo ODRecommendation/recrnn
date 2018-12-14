@@ -32,14 +32,14 @@ object Main extends App{
 
   val params = ModelParams(
     maxLength = 5,
-    maxEpoch = 10,
-    batchSize = 8,
-    embedOutDim = 10,
-    dataPath = "./modelFiles/recRNNsample.csv",
+    maxEpoch = 20,
+    batchSize = 32,
+    embedOutDim = 50,
+    dataPath = "./modelFiles/recrnn.csv",
     modelPath = "./modelFiles/rnnModel"
   )
   val conf = new SparkConf()
-    .setAppName("stemCell")
+    .setAppName("recRNN")
     .setMaster("local[*]")
     .set("spark.driver.memory", "100g")
   val sc = NNContext.initNNContext(conf)
@@ -60,10 +60,11 @@ object Main extends App{
   data1.show()
   data1.printSchema()
 
-  val featureRow = data1.select("vectors").head
-  val inputLayer = featureRow(0).asInstanceOf[SparseVector].size
-
-  println(inputLayer)
+//  val featureRow = data1.select("vectors").head
+//  val inputLayer = featureRow(0).asInstanceOf[SparseVector].size
+//
+//  println(inputLayer)
+  val inputLayer = 21390
 
   /*Collect item to sequence*/
   val data2 = data1.groupBy("SESSION_ID")
