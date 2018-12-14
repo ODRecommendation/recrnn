@@ -60,7 +60,7 @@ class RecRNN {
              batchSize: Int
            ):Module[Float] = {
 
-    val split = train.randomSplit(Array(0.7, 0.3), 100)
+    val split = train.randomSplit(Array(0.8, 0.2), 100)
     val trainRDD = split(0)
     val testRDD = split(1)
     val optimizer = Optimizer(
