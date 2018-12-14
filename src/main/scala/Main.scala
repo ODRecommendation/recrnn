@@ -36,20 +36,20 @@ object Main{
     val params = ModelParams(
       maxLength = 5,
       maxEpoch = 20,
-      batchSize = 8,
+      batchSize = 56,
       embedOutDim = 50,
-      inputDir = "./modelFiles/",
+      inputDir = "s3://philipsbigdata/testRNN/",
       logDir = "./log/"
     )
     val conf = new SparkConf()
       .setAppName("recRNN")
-      .setMaster("local[*]")
-      .set("spark.driver.memory", "100g")
+//      .setMaster("local[*]")
+//      .set("spark.driver.memory", "100g")
     val sc = NNContext.initNNContext(conf)
     val spark = SparkSession.builder().config(conf).getOrCreate()
 
     /*One hot encode each item*/
-    val data = spark.read.options(Map("header" -> "true", "delimiter" -> "|")).csv(params.inputDir + "recRNNsample.csv")
+    val data = spark.read.options(Map("header" -> "true", "delimiter" -> "|")).csv(params.inputDir + "recrnn.csv")
 
     val skuCount = data.select("SKU_NUM").distinct().count().toInt
     println(skuCount)
