@@ -43,8 +43,8 @@ object Main{
     )
     val conf = new SparkConf()
       .setAppName("recRNN")
-//      .setMaster("local[*]")
-//      .set("spark.driver.memory", "100g")
+      .setMaster("local[*]")
+      .set("spark.driver.memory", "100g")
     val sc = NNContext.initNNContext(conf)
     val spark = SparkSession.builder().config(conf).getOrCreate()
 
