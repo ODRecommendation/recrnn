@@ -1,4 +1,5 @@
 import com.intel.analytics.bigdl.dataset.Sample
+import com.intel.analytics.bigdl.example.utils.TextClassifier
 import com.intel.analytics.bigdl.tensor.Tensor
 import com.intel.analytics.bigdl.utils.T
 import com.intel.analytics.zoo.common.NNContext
@@ -33,9 +34,9 @@ object Main extends App{
   val params = ModelParams(
     maxLength = 5,
     maxEpoch = 20,
-    batchSize = 32,
+    batchSize = 8,
     embedOutDim = 50,
-    dataPath = "./modelFiles/recrnn.csv",
+    dataPath = "./modelFiles/recRNNsample.csv",
     modelPath = "./modelFiles/rnnModel"
   )
   val conf = new SparkConf()
@@ -49,6 +50,7 @@ object Main extends App{
   val data = spark.read.options(Map("header" -> "true", "delimiter" -> "|")).csv(params.dataPath)
 
   val skuCount = data.select("SKU_NUM").distinct().count().toInt
+  println(skuCount)
   val skuIndexer = new StringIndexer().setInputCol("SKU_NUM").setOutputCol("SKU_INDEX").setHandleInvalid("keep")
   val skuIndexerModel = skuIndexer.fit(data)
   val labelIndexer = new StringIndexer().setInputCol("out").setOutputCol("label").setHandleInvalid("keep")
@@ -62,9 +64,6 @@ object Main extends App{
 
 //  val featureRow = data1.select("vectors").head
 //  val inputLayer = featureRow(0).asInstanceOf[SparseVector].size
-//
-//  println(inputLayer)
-  val inputLayer = 21390
 
   /*Collect item to sequence*/
   val data2 = data1.groupBy("SESSION_ID")
@@ -74,14 +73,28 @@ object Main extends App{
   data2.printSchema()
   data2.show()
 
-  val skuPadding = Array.fill[Float](inputLayer)(0)
+  val skuPadding = Array.fill[Float](skuCount)(0)
   val skuPadding1 = Array.fill[Array[Float]](params.maxLength)(skuPadding)
   val bcPadding = sc.broadcast(skuPadding1).value
+
+//  def shaping(tokens: Array[Float], sequenceLen: Int, trunc: String = "pre")
+//  : Array[Float] = {
+//    val paddedTokens = if (tokens.length > sequenceLen) {
+//      if ("pre" == trunc) {
+//        tokens.slice(tokens.length - sequenceLen, tokens.length)
+//      } else {
+//        tokens.slice(0, sequenceLen)
+//      }
+//    } else {
+//      tokens ++ Array.fill[Float](sequenceLen - tokens.length)(0)
+//    }
+//    paddedTokens
+//  }
 
   /*Pad items to equal length*/
   def prePadding: mutable.WrappedArray[SparseVector] => Array[Array[Float]] = x => {
     val maxLength = params.maxLength
-    val skuPadding = Array.fill[Float](inputLayer)(0)
+    val skuPadding = Array.fill[Float](skuCount)(0)
     val skuPadding1 = Array.fill[Array[Float]](maxLength)(skuPadding)
     val item = skuPadding1 ++ x.array.map(_.toArray.map(_.toFloat))
     val item2 = item.takeRight(maxLength + 1)
@@ -111,7 +124,7 @@ object Main extends App{
   val trainSample = data3.rdd.map(r => {
     val label = Tensor[Float](T(r.getAs[Float]("label")))
     val array = r.getAs[mutable.WrappedArray[mutable.WrappedArray[Float]]]("features").array.flatten
-    val vec = Tensor(array, Array(params.maxLength, inputLayer))
+    val vec = Tensor(array, Array(params.maxLength, skuCount))
     Sample(vec, label)
   })
 
