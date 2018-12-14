@@ -2,6 +2,7 @@ import com.intel.analytics.bigdl.Module
 import com.intel.analytics.bigdl.dataset.Sample
 import com.intel.analytics.bigdl.nn.abstractnn.AbstractModule
 import com.intel.analytics.bigdl.nn.{Sequential => _}
+import com.intel.analytics.bigdl.visualization.{TrainSummary, ValidationSummary}
 //import com.intel.analytics.bigdl.nn.keras._
 import com.intel.analytics.bigdl.nn._
 import com.intel.analytics.bigdl.optim._
@@ -54,6 +55,7 @@ class RecRNN {
              model: Sequential[Float],
              train: RDD[Sample[Float]],
              modelPath: String,
+             logDir: String,
              maxEpoch: Int,
              batchSize: Int
            ):Module[Float] = {
@@ -70,13 +72,13 @@ class RecRNN {
 
     val trained_model = optimizer
       .setOptimMethod(new RMSprop[Float]())
-//      .setTrainSummary(new TrainSummary("./modelFiles", "recRNNTrainingSum"))
-//      .setValidationSummary(new ValidationSummary("./modelFiles", "recRNNValidationSum"))
+      .setTrainSummary(new TrainSummary(logDir, "recRNNTrainingSum"))
+      .setValidationSummary(new ValidationSummary(logDir, "recRNNValidationSum"))
       .setValidation(Trigger.maxEpoch(maxEpoch), testRDD, Array(new Top1Accuracy[Float]()), batchSize)
       .setEndWhen(Trigger.maxEpoch(maxEpoch))
       .optimize()
 
-    trained_model.saveModule(modelPath, null, overWrite = true)
+    trained_model.saveModule(modelPath + "rnnModel", null, overWrite = true)
     println("model has been saved")
 
     trained_model
