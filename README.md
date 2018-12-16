@@ -1,5 +1,5 @@
 # RNN RECOMMENDATION USING BIGDL AND SPARK
-A distributed rnn product recommendation algorithm using BigDL and Spark. This recommendation algorithm only requires sequence of item agent has interacted as input therefore works with both identified / anonymous agent product recommendation.
+A distributed rnn product recommendation implementation using BigDL and Spark. This recommendation algorithm only requires sequence of item agent has interacted as input therefore works with product recommendation for both identified / anonymous agent.
 
 ## Requirements
 ```scala
