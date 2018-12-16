@@ -113,8 +113,8 @@ object Main{
       Sample(vec, label)
     })
 
-    println("Sample feature print: "+ trainSample.take(1).head.feature())
-    println("Sample label print: " + trainSample.take(1).head.label())
+    println("Sample feature print: \n"+ trainSample.take(1).head.feature())
+    println("Sample label print: \n" + trainSample.take(1).head.label())
 
     /*Train rnn model*/
     val rnn = new RecRNN()
