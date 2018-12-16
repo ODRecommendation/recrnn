@@ -1,1 +1,1 @@
-{"class":"org.apache.spark.ml.feature.StringIndexerModel","timestamp":1544935189447,"sparkVersion":"2.3.1","uid":"strIdx_b2dcba52d215","paramMap":{"inputCol":"SKU_NUM","outputCol":"SKU_INDEX","stringOrderType":"frequencyDesc","handleInvalid":"keep"}}
+{"class":"org.apache.spark.ml.feature.StringIndexerModel","timestamp":1544936007254,"sparkVersion":"2.3.1","uid":"strIdx_e06237cb36c2","paramMap":{"handleInvalid":"keep","inputCol":"SKU_NUM","outputCol":"SKU_INDEX","stringOrderType":"frequencyDesc"}}
