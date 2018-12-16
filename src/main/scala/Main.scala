@@ -31,7 +31,6 @@ object Main{
 
   def main(args: Array[String]): Unit = {
 
-    /*Construct BigDL session*/
     Logger.getLogger("org").setLevel(Level.WARN)
 
     val params = ModelParams(
@@ -45,12 +44,14 @@ object Main{
       stringIndexerName = "skuIndexer",
       rnnName = "rnnModel"
     )
+
+    /*Construct BigDL session*/
     val conf = new SparkConf()
       .setAppName("recRNN")
       .setMaster("local[*]")
       .set("spark.driver.memory", "100g")
     val sc = NNContext.initNNContext(conf)
-    val spark = SparkSession.builder().config(conf).getOrCreate()
+    val spark = SparkSession.builder().config(sc.getConf).getOrCreate()
 
     /*StringIndex SKU number*/
     val data = spark.read.options(Map("header" -> "true", "delimiter" -> "|")).csv(params.inputDir + params.dataName)
