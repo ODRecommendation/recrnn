@@ -1,13 +1,8 @@
 import com.intel.analytics.bigdl.Module
 import com.intel.analytics.bigdl.dataset.Sample
-import com.intel.analytics.bigdl.nn.abstractnn.AbstractModule
 import com.intel.analytics.bigdl.nn.{Sequential => _}
-import com.intel.analytics.bigdl.visualization.{TrainSummary, ValidationSummary}
-//import com.intel.analytics.bigdl.nn.keras._
 import com.intel.analytics.bigdl.nn._
 import com.intel.analytics.bigdl.optim._
-import com.intel.analytics.bigdl.tensor.Tensor
-import com.intel.analytics.bigdl.utils.Table
 import org.apache.spark.rdd.RDD
  /**
   * Created by luyangwang on Dec, 2018
@@ -22,30 +17,13 @@ class RecRNN {
                   embedOutDim: Int
                 ): Sequential[Float] = {
     val model = Sequential[Float]()
-    val branches = Concat[Float](2)
-//    val embedOutDim = max(floor(pow(skuCount,1 / 4)), 10)
-//    println("embedOutDim: " + embedOutDim.toString)
-
-    var embedWidth = 0
-    (1 to maxLength).foreach { _ =>
-      val lookupTable = LookupTable[Float](skuCount, embedOutDim)
-      lookupTable.setWeightsBias(
-        Array(Tensor[Float](skuCount, embedOutDim).randn(0, 0.1)))
-      branches.add(
-        Sequential[Float]()
-          .add(Select[Float](2, 1 + embedWidth))
-          .add(AddConstant(1.0))
-          .add(lookupTable))
-          .setName(s"branch${embedWidth + 1}")
-      embedWidth += 1
-    }
 
     model
-      .add(branches)
-      .add(BiRecurrent[Float](JoinTable[Float](2, 2).asInstanceOf[AbstractModule[Table, Tensor[Float], Float]]).add(GRU(embedOutDim, 200)))
+      .add(LookupTable[Float](skuCount, embedOutDim)).setName("Embedding")
+      .add(Recurrent[Float]().add(GRU(embedOutDim, 200))).setName("GRU")
       .add(Dropout(0.2))
       .add(Select(2, -1))
-      .add(Linear[Float](400, numClasses))
+      .add(Linear[Float](200, numClasses)).setName("Linear")
       .add(LogSoftMax())
 
     model
@@ -54,7 +32,8 @@ class RecRNN {
   def train(
              model: Sequential[Float],
              train: RDD[Sample[Float]],
-             modelPath: String,
+             inputDir: String,
+             rnnName: String,
              logDir: String,
              maxEpoch: Int,
              batchSize: Int
@@ -74,12 +53,13 @@ class RecRNN {
       .setOptimMethod(new RMSprop[Float]())
 //      .setTrainSummary(new TrainSummary(logDir, "recRNNTrainingSum"))
 //      .setValidationSummary(new ValidationSummary(logDir, "recRNNValidationSum"))
-      .setValidation(Trigger.maxEpoch(maxEpoch), testRDD, Array(new Top1Accuracy[Float]()), batchSize)
+//      .setCheckpoint(modelPath, Trigger.everyEpoch)
+      .setValidation(Trigger.everyEpoch, testRDD, Array(new Top5Accuracy[Float]()), batchSize)
       .setEndWhen(Trigger.maxEpoch(maxEpoch))
       .optimize()
 
-    trained_model.saveModule(modelPath + "rnnModel", null, overWrite = true)
-    println("model has been saved")
+    trained_model.saveModule(inputDir + rnnName, null, overWrite = true)
+    println("Model has been saved")
 
     trained_model
   }

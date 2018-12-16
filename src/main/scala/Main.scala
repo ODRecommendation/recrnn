@@ -1,12 +1,10 @@
 import com.intel.analytics.bigdl.dataset.Sample
-import com.intel.analytics.bigdl.example.utils.TextClassifier
 import com.intel.analytics.bigdl.tensor.Tensor
 import com.intel.analytics.bigdl.utils.T
 import com.intel.analytics.zoo.common.NNContext
 import org.apache.log4j.{Level, Logger}
 import org.apache.spark.SparkConf
 import org.apache.spark.ml.feature._
-import org.apache.spark.ml.linalg.SparseVector
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.functions._
 
@@ -23,7 +21,10 @@ case class ModelParams(
                  batchSize: Int,
                  embedOutDim: Int,
                  inputDir: String,
-                 logDir: String
+                 logDir: String,
+                 dataName: String,
+                 stringIndexerName: String,
+                 rnnName: String
                  )
 
 object Main{
@@ -35,11 +36,14 @@ object Main{
 
     val params = ModelParams(
       maxLength = 5,
-      maxEpoch = 20,
-      batchSize = 8,
-      embedOutDim = 50,
+      maxEpoch = 10,
+      batchSize = 128,
+      embedOutDim = 100,
       inputDir = "./modelFiles/",
-      logDir = "./log/"
+      logDir = "./log/",
+      dataName = "recrnn.csv",
+      stringIndexerName = "skuIndexer",
+      rnnName = "rnnModel"
     )
     val conf = new SparkConf()
       .setAppName("recRNN")
@@ -48,52 +52,49 @@ object Main{
     val sc = NNContext.initNNContext(conf)
     val spark = SparkSession.builder().config(conf).getOrCreate()
 
-    /*One hot encode each item*/
-    val data = spark.read.options(Map("header" -> "true", "delimiter" -> "|")).csv(params.inputDir + "recRNNsample.csv")
+    /*StringIndex SKU number*/
+    val data = spark.read.options(Map("header" -> "true", "delimiter" -> "|")).csv(params.inputDir + params.dataName)
 
     val skuCount = data.select("SKU_NUM").distinct().count().toInt
     println(skuCount)
     val skuIndexer = new StringIndexer().setInputCol("SKU_NUM").setOutputCol("SKU_INDEX").setHandleInvalid("keep")
     val skuIndexerModel = skuIndexer.fit(data)
-    val ohe = new OneHotEncoder().setInputCol("SKU_INDEX").setOutputCol("vectors")
+    skuIndexerModel.write.overwrite().save(params.inputDir + params.stringIndexerName)
+    println("SkuIndexerModel has been saved")
 
-    val data1a = skuIndexerModel.transform(data).withColumn("SKU_INDEX", col("SKU_INDEX") + 1)
-    val data1 = ohe.transform(data1a)
+    val data1 = skuIndexerModel
+      .transform(data)
+      .withColumn("SKU_INDEX", col("SKU_INDEX") + 1)
 
     data1.show()
     data1.printSchema()
 
     /*Collect item to sequence*/
     val data2 = data1.groupBy("SESSION_ID")
-      .agg(collect_list("vectors").alias("item"), collect_list("SKU_INDEX").alias("sku"))
-      .filter(col("sku").isNotNull && col("item").isNotNull)
+      .agg(collect_list("SKU_INDEX").alias("sku"))
+      .filter(col("sku").isNotNull)
 
     data2.printSchema()
     data2.show()
 
-    val skuPadding = Array.fill[Float](skuCount)(0)
-    val skuPadding1 = Array.fill[Array[Float]](params.maxLength)(skuPadding)
-    val bcPadding = sc.broadcast(skuPadding1).value
-
-    /*Pad items to equal length*/
-    def prePadding: mutable.WrappedArray[SparseVector] => Array[Array[Float]] = x => {
-      val skuPadding = Array.fill[Float](skuCount)(0)
-      val skuPadding1 = Array.fill[Array[Float]](params.maxLength)(skuPadding)
-      val item = skuPadding1 ++ x.array.map(_.toArray.map(_.toFloat))
+    /*PrePad UDF*/
+    def prePadding: mutable.WrappedArray[java.lang.Double] => Array[Float] = x => {
+      val skuPadding = Array.fill[Float](params.maxLength)(1)
+      val item = skuPadding ++ x.array.map(_.toFloat)
       val item2 = item.takeRight(params.maxLength + 1)
       val item3 = item2.dropRight(1)
       item3
     }
+    val prePaddingUDF = udf(prePadding)
 
+    /*Get label UDF*/
     def getLabel: mutable.WrappedArray[java.lang.Double] => Float = x => {
       x.takeRight(1).head.floatValue()
     }
-
-    val prePaddingUDF = udf(prePadding)
     val getLabelUDF = udf(getLabel)
 
     val data3 = data2
-      .withColumn("features", prePaddingUDF(col("item")))
+      .withColumn("features", prePaddingUDF(col("sku")))
       .withColumn("label", getLabelUDF(col("sku")))
 
     data3.show()
@@ -103,11 +104,11 @@ object Main{
     val outSize = data3.rdd.map(_.getAs[Float]("label")).max.toInt
     println(outSize)
 
-    /*Dataframe to tensor*/
+    /*DataFrame to sample*/
     val trainSample = data3.rdd.map(r => {
       val label = Tensor[Float](T(r.getAs[Float]("label")))
-      val array = r.getAs[mutable.WrappedArray[mutable.WrappedArray[Float]]]("features").array.flatten
-      val vec = Tensor(array, Array(params.maxLength, skuCount))
+      val array = r.getAs[mutable.WrappedArray[java.lang.Float]]("features").array.map(_.toFloat)
+      val vec = Tensor(array, Array(params.maxLength))
       Sample(vec, label)
     })
 
@@ -117,6 +118,6 @@ object Main{
     /*Train rnn model*/
     val rnn = new RecRNN()
     val model = rnn.buildModel(outSize, skuCount, params.maxLength, params.embedOutDim)
-    rnn.train(model, trainSample, params.inputDir, params.logDir, params.maxEpoch, params.batchSize)
+    rnn.train(model, trainSample, params.inputDir, params.rnnName, params.logDir, params.maxEpoch, params.batchSize)
   }
 }
