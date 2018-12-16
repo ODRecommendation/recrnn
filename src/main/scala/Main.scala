@@ -60,6 +60,7 @@ object Main{
     val skuIndexer = new StringIndexer().setInputCol("SKU_NUM").setOutputCol("SKU_INDEX").setHandleInvalid("keep")
     val skuIndexerModel = skuIndexer.fit(data)
     skuIndexerModel.write.overwrite().save(params.inputDir + params.stringIndexerName)
+    println("SkuIndexerModel has been saved")
 
     val data1 = skuIndexerModel
       .transform(data)
