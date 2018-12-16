@@ -78,10 +78,24 @@ object Main{
     data2.printSchema()
     data2.show()
 
+    def shaping(tokens: Array[Float], sequenceLen: Int, trunc: String = "pre")
+    : Array[Float] = {
+      val paddedTokens = if (tokens.length > sequenceLen) {
+        if ("pre" == trunc) {
+          tokens.slice(tokens.length - sequenceLen, tokens.length)
+        } else {
+          tokens.slice(0, sequenceLen)
+        }
+      } else {
+        tokens ++ Array.fill[Float](sequenceLen - tokens.length)(0)
+      }
+      paddedTokens
+    }
+
     /*PrePad UDF*/
     def prePadding: mutable.WrappedArray[java.lang.Double] => Array[Float] = x => {
-      val skuPadding = Array.fill[Float](params.maxLength)(1)
-      val item = skuPadding ++ x.array.map(_.toFloat)
+      val item = if (x.length > params.maxLength) x.array.map(_.toFloat)
+      else Array.fill[Float](params.maxLength - x.length + 1)(1) ++ x.array.map(_.toFloat)
       val item2 = item.takeRight(params.maxLength + 1)
       val item3 = item2.dropRight(1)
       item3
