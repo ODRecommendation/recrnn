@@ -34,7 +34,7 @@ object Main{
     Logger.getLogger("org").setLevel(Level.WARN)
 
     val params = ModelParams(
-      maxLength = 5,
+      maxLength = 10,
       maxEpoch = 10,
       batchSize = 128,
       embedOutDim = 100,
@@ -56,7 +56,7 @@ object Main{
     /*StringIndex SKU number*/
     val data = spark.read.options(Map("header" -> "true", "delimiter" -> "|")).csv(params.inputDir + params.dataName)
 
-    val skuCount = data.select("SKU_NUM").distinct().count().toInt
+    val skuCount = data.select("SKU_NUM").distinct().count().toInt + 1
     println(skuCount)
     val skuIndexer = new StringIndexer().setInputCol("SKU_NUM").setOutputCol("SKU_INDEX").setHandleInvalid("keep")
     val skuIndexerModel = skuIndexer.fit(data)
@@ -65,7 +65,7 @@ object Main{
 
     val data1 = skuIndexerModel
       .transform(data)
-      .withColumn("SKU_INDEX", col("SKU_INDEX") + 1)
+      .withColumn("SKU_INDEX", col("SKU_INDEX") + 2)
 
     data1.show()
     data1.printSchema()
