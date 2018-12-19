@@ -14,7 +14,7 @@ libraryDependencies ++= Seq(
 libraryDependencies += "com.intel.analytics.zoo" % "analytics-zoo-bigdl_0.7.1-spark_2.3.1" % analyticsZooVersion
 ```
 
-## How to run example
+## How to use
 ```scala
 sbt assembly
 spark-submit --class Main ${location of assembled jar}
