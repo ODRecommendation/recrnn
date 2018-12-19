@@ -15,8 +15,21 @@ libraryDependencies += "com.intel.analytics.zoo" % "analytics-zoo-bigdl_0.7.1-sp
 ```
 
 ## How to use
-1. Run exmaple
-
+Run model on your own data by replacing below value, if leave them blank model will run on provided sample data under modelFiles folder
+```scala
+    val params = ModelParams(
+      maxLength = 10,
+      maxEpoch = 10,
+      batchSize = 2560,
+      embedOutDim = 200,
+      inputDir = "./modelFiles/",
+      logDir = "./log/",
+      dataName = "recrnn.csv",
+      stringIndexerName = "skuIndexer",
+      rnnName = "rnnModel"
+    )
+```
+Package code to one jar and run as spark job
 ```scala
 sbt assembly
 spark-submit --class Main ${location of assembled jar}
