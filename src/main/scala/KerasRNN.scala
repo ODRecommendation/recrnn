@@ -4,6 +4,7 @@ import com.intel.analytics.bigdl.nn.CrossEntropyCriterion
 import com.intel.analytics.bigdl.nn.keras._
 import com.intel.analytics.bigdl.utils.Shape
 import com.intel.analytics.bigdl.optim._
+import com.intel.analytics.zoo.pipeline.api.keras.objectives.SparseCategoricalCrossEntropy
 import org.apache.spark.rdd.RDD
  /**
   * Created by luyangwang on Dec, 2018
@@ -43,12 +44,14 @@ class KerasRNN {
     val optimizer = Optimizer(
       model = model,
       sampleRDD = trainRDD,
+//      criterion = new SparseCategoricalCrossEntropy[Float](zeroBasedLabel = false),
       criterion = new CrossEntropyCriterion[Float](),
       batchSize = batchSize
     )
 
     val trained_model = optimizer
       .setOptimMethod(new RMSprop[Float]())
+//      .setOptimMethod(new Adagrad[Float]())
 //      .setTrainSummary(new TrainSummary(logDir, "recRNNTrainingSum"))
 //      .setValidationSummary(new ValidationSummary(logDir, "recRNNValidationSum"))
 //      .setCheckpoint(modelPath, Trigger.everyEpoch)

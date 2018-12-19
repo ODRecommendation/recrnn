@@ -1,13 +1,23 @@
+import java.io.File
+import java.nio.file.Paths
+
+import com.amazonaws.auth.DefaultAWSCredentialsProviderChain
+import com.amazonaws.services.s3.AmazonS3ClientBuilder
+import com.amazonaws.services.s3.model.PutObjectResult
 import com.intel.analytics.bigdl.dataset.Sample
 import com.intel.analytics.bigdl.tensor.Tensor
 import com.intel.analytics.bigdl.utils.T
 import com.intel.analytics.zoo.common.NNContext
-import com.intel.analytics.zoo.models.recommendation.WideAndDeep
+import ml.combust.bundle.BundleFile
+import ml.combust.mleap.spark.SparkSupport._
 import org.apache.log4j.{Level, Logger}
 import org.apache.spark.SparkConf
-import org.apache.spark.ml.feature._
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.ml.bundle.SparkBundleContext
+import org.apache.spark.ml.feature.{StringIndexerModel, _}
+import org.apache.spark.ml.mleap.SparkUtil
 import org.apache.spark.sql.functions._
+import org.apache.spark.sql.{DataFrame, SparkSession}
+import resource.managed
 
 import scala.collection.mutable
 
@@ -30,6 +40,11 @@ case class ModelParams(
 
 object Main{
 
+  private val s3client = AmazonS3ClientBuilder.standard()
+//    .withRegion(Regions.CN_NORTH_1)
+    .withCredentials(new DefaultAWSCredentialsProviderChain())
+    .build()
+
   def main(args: Array[String]): Unit = {
 
     Logger.getLogger("org").setLevel(Level.WARN)
@@ -38,7 +53,7 @@ object Main{
       maxLength = 10,
       maxEpoch = 10,
       batchSize = 2560,
-      embedOutDim = 100,
+      embedOutDim = 200,
       inputDir = "./modelFiles/",
       logDir = "./log/",
       dataName = "recrnn.csv",
@@ -62,6 +77,7 @@ object Main{
     val skuIndexer = new StringIndexer().setInputCol("SKU_NUM").setOutputCol("SKU_INDEX").setHandleInvalid("keep")
     val skuIndexerModel = skuIndexer.fit(data)
     skuIndexerModel.write.overwrite().save(params.inputDir + params.stringIndexerName)
+    saveToMleap(skuIndexerModel, data, params.inputDir + params.stringIndexerName)
     println("SkuIndexerModel has been saved")
 
     /*StringIndex the sku number and adjust the starting index to 1*/
@@ -128,4 +144,29 @@ object Main{
 //    val model2 = rnn.buildModel(outSize, skuCount, params.maxLength, params.embedOutDim)
 //    rnn.train(model2, trainSample, params.inputDir, params.rnnName, params.logDir, params.maxEpoch, params.batchSize)
   }
+
+  def saveToMleap(
+                   indexerModel: StringIndexerModel,
+                   data: DataFrame,
+                   indexerModelPath: String
+                 ): Unit = {
+    val pipeline = SparkUtil.createPipelineModel(uid = "pipeline", Array(indexerModel))
+    val sbc = SparkBundleContext().withDataset(pipeline.transform(data))
+    val currentDir = Paths.get(".").toAbsolutePath
+
+    new File(s"$currentDir/$indexerModelPath.zip").delete()
+    for(bf <- managed(BundleFile(s"jar:file:$currentDir/$indexerModelPath.zip"))) {
+      pipeline.writeBundle.save(bf)(sbc).get
+    }
+  }
+
+  def putS3Obj(
+                bucketName: String,
+                fileKey: String,
+                filePath: String
+              ): PutObjectResult = {
+    val file = new File(filePath)
+    s3client.putObject(bucketName, fileKey, file)
+  }
+
 }

@@ -15,6 +15,8 @@ libraryDependencies += "com.intel.analytics.zoo" % "analytics-zoo-bigdl_0.7.1-sp
 ```
 
 ## How to use
+1. Run exmaple
+
 ```scala
 sbt assembly
 spark-submit --class Main ${location of assembled jar}
