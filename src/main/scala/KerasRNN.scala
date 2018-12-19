@@ -1,14 +1,15 @@
 import com.intel.analytics.bigdl.Module
 import com.intel.analytics.bigdl.dataset.Sample
-import com.intel.analytics.bigdl.nn.{Sequential => _}
-import com.intel.analytics.bigdl.nn._
+import com.intel.analytics.bigdl.nn.CrossEntropyCriterion
+import com.intel.analytics.bigdl.nn.keras._
+import com.intel.analytics.bigdl.utils.Shape
 import com.intel.analytics.bigdl.optim._
 import org.apache.spark.rdd.RDD
  /**
   * Created by luyangwang on Dec, 2018
   *
   */
-class RecRNN {
+class KerasRNN {
 
   def buildModel(
                   numClasses: Int,
@@ -18,14 +19,10 @@ class RecRNN {
                 ): Sequential[Float] = {
     val model = Sequential[Float]()
 
-    model
-      .add(LookupTable[Float](skuCount, embedOutDim)).setName("Embedding")
-      .add(Recurrent[Float]().add(GRU(embedOutDim, 200))).setName("GRU")
-      .add(Dropout(0.2))
-      .add(Select(2, -1))
-      .add(Linear[Float](200, numClasses)).setName("Linear")
-      .add(LogSoftMax())
-
+    model.add(Embedding(skuCount + 1, embedOutDim, inputShape = Shape(5)))
+        .add(GRU(200, returnSequences = false))
+        .add(Dense(numClasses))
+        .add(Activation("softmax"))
     model
   }
 

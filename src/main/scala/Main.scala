@@ -56,16 +56,17 @@ object Main{
     /*StringIndex SKU number*/
     val data = spark.read.options(Map("header" -> "true", "delimiter" -> "|")).csv(params.inputDir + params.dataName)
 
-    val skuCount = data.select("SKU_NUM").distinct().count().toInt + 1
+    val skuCount = data.select("SKU_NUM").distinct().count().toInt
     println(skuCount)
     val skuIndexer = new StringIndexer().setInputCol("SKU_NUM").setOutputCol("SKU_INDEX").setHandleInvalid("keep")
     val skuIndexerModel = skuIndexer.fit(data)
     skuIndexerModel.write.overwrite().save(params.inputDir + params.stringIndexerName)
     println("SkuIndexerModel has been saved")
 
+    /*StringIndex the sku number and adjust the starting index to 1*/
     val data1 = skuIndexerModel
       .transform(data)
-      .withColumn("SKU_INDEX", col("SKU_INDEX") + 2)
+      .withColumn("SKU_INDEX", col("SKU_INDEX") + 1)
 
     data1.show()
     data1.printSchema()
@@ -78,24 +79,10 @@ object Main{
     data2.printSchema()
     data2.show()
 
-    def shaping(tokens: Array[Float], sequenceLen: Int, trunc: String = "pre")
-    : Array[Float] = {
-      val paddedTokens = if (tokens.length > sequenceLen) {
-        if ("pre" == trunc) {
-          tokens.slice(tokens.length - sequenceLen, tokens.length)
-        } else {
-          tokens.slice(0, sequenceLen)
-        }
-      } else {
-        tokens ++ Array.fill[Float](sequenceLen - tokens.length)(0)
-      }
-      paddedTokens
-    }
-
     /*PrePad UDF*/
     def prePadding: mutable.WrappedArray[java.lang.Double] => Array[Float] = x => {
       val item = if (x.length > params.maxLength) x.array.map(_.toFloat)
-      else Array.fill[Float](params.maxLength - x.length + 1)(1) ++ x.array.map(_.toFloat)
+      else Array.fill[Float](params.maxLength - x.length + 1)(0) ++ x.array.map(_.toFloat)
       val item2 = item.takeRight(params.maxLength + 1)
       val item3 = item2.dropRight(1)
       item3
@@ -104,7 +91,7 @@ object Main{
 
     /*Get label UDF*/
     def getLabel: mutable.WrappedArray[java.lang.Double] => Float = x => {
-      x.takeRight(1).head.floatValue()
+      x.takeRight(1).head.floatValue() + 1
     }
     val getLabelUDF = udf(getLabel)
 
@@ -130,9 +117,14 @@ object Main{
     println("Sample feature print: \n"+ trainSample.take(1).head.feature())
     println("Sample label print: \n" + trainSample.take(1).head.label())
 
-    /*Train rnn model*/
-    val rnn = new RecRNN()
-    val model = rnn.buildModel(outSize, skuCount, params.maxLength, params.embedOutDim)
-    rnn.train(model, trainSample, params.inputDir, params.rnnName, params.logDir, params.maxEpoch, params.batchSize)
+    /*Train rnn model using Keras API*/
+    val kerasRNN = new KerasRNN()
+    val model1 = kerasRNN.buildModel(outSize, skuCount, params.maxLength, params.embedOutDim)
+    kerasRNN.train(model1, trainSample, params.inputDir, params.rnnName, params.logDir, params.maxEpoch, params.batchSize)
+
+    /*Train rnn model using BigDL*/
+//    val rnn = new BigDLRNN()
+//    val model2 = rnn.buildModel(outSize, skuCount, params.maxLength, params.embedOutDim)
+//    rnn.train(model2, trainSample, params.inputDir, params.rnnName, params.logDir, params.maxEpoch, params.batchSize)
   }
 }
