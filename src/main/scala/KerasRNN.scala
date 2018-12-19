@@ -19,10 +19,11 @@ class KerasRNN {
                 ): Sequential[Float] = {
     val model = Sequential[Float]()
 
-    model.add(Embedding(skuCount + 1, embedOutDim, inputShape = Shape(5)))
-        .add(GRU(200, returnSequences = false))
+    model.add(Embedding(skuCount + 1, embedOutDim, inputShape = Shape(5))).setName("Embedding")
+        .add(GRU(200, returnSequences = false)).setName("GRU1")
+        .add(Dropout(0.2))
         .add(Dense(numClasses))
-        .add(Activation("softmax"))
+//        .add(Activation("softmax"))
     model
   }
 
@@ -34,7 +35,7 @@ class KerasRNN {
              logDir: String,
              maxEpoch: Int,
              batchSize: Int
-           ):Module[Float] = {
+           ): Module[Float] = {
 
     val split = train.randomSplit(Array(0.8, 0.2), 100)
     val trainRDD = split(0)
@@ -55,7 +56,7 @@ class KerasRNN {
       .setEndWhen(Trigger.maxEpoch(maxEpoch))
       .optimize()
 
-    trained_model.saveModule(inputDir + rnnName, null, overWrite = true)
+    trained_model.saveModule(inputDir + rnnName + "Keras", null, overWrite = true)
     println("Model has been saved")
 
     trained_model

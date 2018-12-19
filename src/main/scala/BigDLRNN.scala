@@ -21,11 +21,12 @@ class BigDLRNN {
     model
       .add(AddConstant(1))
       .add(LookupTable[Float](skuCount + 1, embedOutDim)).setName("Embedding")
-      .add(Recurrent[Float]().add(GRU(embedOutDim, 200))).setName("GRU")
+      .add(Recurrent[Float]().add(GRU(embedOutDim, 200))).setName("GRU1")
+      .add(Recurrent[Float]().add(GRU(200, 200))).setName("GRU2")
       .add(Dropout(0.2))
       .add(Select(2, -1))
       .add(Linear[Float](200, numClasses)).setName("Linear")
-      .add(LogSoftMax())
+//      .add(LogSoftMax())
 
     model
   }

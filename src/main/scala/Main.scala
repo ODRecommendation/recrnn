@@ -2,6 +2,7 @@ import com.intel.analytics.bigdl.dataset.Sample
 import com.intel.analytics.bigdl.tensor.Tensor
 import com.intel.analytics.bigdl.utils.T
 import com.intel.analytics.zoo.common.NNContext
+import com.intel.analytics.zoo.models.recommendation.WideAndDeep
 import org.apache.log4j.{Level, Logger}
 import org.apache.spark.SparkConf
 import org.apache.spark.ml.feature._
@@ -36,7 +37,7 @@ object Main{
     val params = ModelParams(
       maxLength = 10,
       maxEpoch = 10,
-      batchSize = 128,
+      batchSize = 2560,
       embedOutDim = 100,
       inputDir = "./modelFiles/",
       logDir = "./log/",
