@@ -80,7 +80,6 @@ object Main{
     val skuIndexerModel = skuIndexer.fit(data)
     skuIndexerModel.write.overwrite().save(params.inputDir + params.stringIndexerName)
     saveToMleap(skuIndexerModel, data, params.stringIndexerName)
-    putS3Obj("philipsbigdata", "testmleap", currentDir + params.stringIndexerName + ".zip")
     println("SkuIndexerModel has been saved")
 
     /*StringIndex the sku number and adjust the starting index to 1*/
