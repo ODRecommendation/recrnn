@@ -2,6 +2,7 @@ import java.io.File
 import java.nio.file.Paths
 
 import com.amazonaws.auth.DefaultAWSCredentialsProviderChain
+import com.amazonaws.regions.Regions
 import com.amazonaws.services.s3.AmazonS3ClientBuilder
 import com.amazonaws.services.s3.model.PutObjectResult
 import com.intel.analytics.bigdl.dataset.Sample
@@ -41,9 +42,10 @@ case class ModelParams(
 object Main{
 
   private val s3client = AmazonS3ClientBuilder.standard()
-//    .withRegion(Regions.CN_NORTH_1)
+    .withRegion(Regions.CN_NORTH_1)
     .withCredentials(new DefaultAWSCredentialsProviderChain())
     .build()
+  val currentDir = Paths.get(".").toAbsolutePath + "/"
 
   def main(args: Array[String]): Unit = {
 
@@ -51,7 +53,7 @@ object Main{
 
     val params = ModelParams(
       maxLength = 10,
-      maxEpoch = 10,
+      maxEpoch = 100,
       batchSize = 2560,
       embedOutDim = 200,
       inputDir = "./modelFiles/",
@@ -77,7 +79,8 @@ object Main{
     val skuIndexer = new StringIndexer().setInputCol("SKU_NUM").setOutputCol("SKU_INDEX").setHandleInvalid("keep")
     val skuIndexerModel = skuIndexer.fit(data)
     skuIndexerModel.write.overwrite().save(params.inputDir + params.stringIndexerName)
-    saveToMleap(skuIndexerModel, data, params.inputDir + params.stringIndexerName)
+    saveToMleap(skuIndexerModel, data, params.stringIndexerName)
+    putS3Obj("philipsbigdata", "testmleap", currentDir + params.stringIndexerName + ".zip")
     println("SkuIndexerModel has been saved")
 
     /*StringIndex the sku number and adjust the starting index to 1*/
@@ -152,10 +155,8 @@ object Main{
                  ): Unit = {
     val pipeline = SparkUtil.createPipelineModel(uid = "pipeline", Array(indexerModel))
     val sbc = SparkBundleContext().withDataset(pipeline.transform(data))
-    val currentDir = Paths.get(".").toAbsolutePath
-
-    new File(s"$currentDir/$indexerModelPath.zip").delete()
-    for(bf <- managed(BundleFile(s"jar:file:$currentDir/$indexerModelPath.zip"))) {
+    new File(s"$currentDir$indexerModelPath.zip").delete()
+    for(bf <- managed(BundleFile(s"jar:file:$currentDir$indexerModelPath.zip"))) {
       pipeline.writeBundle.save(bf)(sbc).get
     }
   }
@@ -164,9 +165,10 @@ object Main{
                 bucketName: String,
                 fileKey: String,
                 filePath: String
-              ): PutObjectResult = {
+              ): Unit = {
     val file = new File(filePath)
     s3client.putObject(bucketName, fileKey, file)
+    println(s"$filePath has been uploaded to s3 at $bucketName$fileKey")
   }
 
 }
