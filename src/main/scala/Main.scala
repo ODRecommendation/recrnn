@@ -45,7 +45,7 @@ object Main{
     .withRegion(Regions.CN_NORTH_1)
     .withCredentials(new DefaultAWSCredentialsProviderChain())
     .build()
-  val currentDir = Paths.get(".").toAbsolutePath + "/"
+  val currentDir: String = Paths.get(".").toAbsolutePath + "/"
 
   def main(args: Array[String]): Unit = {
 
