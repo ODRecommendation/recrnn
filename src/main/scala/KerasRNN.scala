@@ -21,6 +21,7 @@ class KerasRNN {
     val model = Sequential[Float]()
 
     model.add(Embedding(skuCount + 1, embedOutDim, inputShape = Shape(5))).setName("Embedding")
+        .add(GRU(200, returnSequences = true)).setName("GRU1")
         .add(GRU(200, returnSequences = false)).setName("GRU1")
         .add(Dropout(0.2))
         .add(Dense(numClasses))
