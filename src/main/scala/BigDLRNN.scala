@@ -22,7 +22,6 @@ class BigDLRNN {
       .add(AddConstant(1))
       .add(LookupTable[Float](skuCount + 1, embedOutDim)).setName("Embedding")
       .add(Recurrent[Float]().add(GRU(embedOutDim, 200))).setName("GRU")
-      .add(Dropout(0.2))
       .add(Select(2, -1))
       .add(Linear[Float](200, numClasses)).setName("Linear")
       .add(LogSoftMax())
@@ -43,19 +42,19 @@ class BigDLRNN {
     val split = train.randomSplit(Array(0.8, 0.2), 100)
     val trainRDD = split(0)
     val testRDD = split(1)
+
+    println(model)
+    println("trainingrdd" + trainRDD.count())
     val optimizer = Optimizer(
       model = model,
       sampleRDD = trainRDD,
-      criterion = new CrossEntropyCriterion[Float](),
+      criterion = new ClassNLLCriterion[Float](),
       batchSize = batchSize
     )
 
     val trained_model = optimizer
       .setOptimMethod(new RMSprop[Float]())
-      //      .setTrainSummary(new TrainSummary(logDir, "recRNNTrainingSum"))
-      //      .setValidationSummary(new ValidationSummary(logDir, "recRNNValidationSum"))
-      //      .setCheckpoint(modelPath, Trigger.everyEpoch)
-      .setValidation(Trigger.everyEpoch, testRDD, Array(new Top5Accuracy[Float]()), batchSize)
+       .setValidation(Trigger.everyEpoch, testRDD, Array(new Top5Accuracy[Float]()), batchSize)
       .setEndWhen(Trigger.maxEpoch(maxEpoch))
       .optimize()
 

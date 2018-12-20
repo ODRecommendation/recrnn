@@ -33,11 +33,15 @@ object Main{
 
     Logger.getLogger("org").setLevel(Level.WARN)
 
+    System.setProperty("log4j.appender.NotConsole","org.apache.log4j.RollingFileAppender")
+    System.setProperty("log4j.appender.NotConsole.fileName","/Users/guoqiong/intelWork/git/officeDepot/recrnn/model.log")
+    System.setProperty("log4j.appender.NotConsole.maxFileSize","20MB")
+
     val params = ModelParams(
       maxLength = 10,
-      maxEpoch = 10,
-      batchSize = 128,
-      embedOutDim = 100,
+      maxEpoch = 2,
+      batchSize = 4000,
+      embedOutDim = 20,
       inputDir = "./modelFiles/",
       logDir = "./log/",
       dataName = "recrnn.csv",
@@ -99,7 +103,7 @@ object Main{
       .withColumn("features", prePaddingUDF(col("sku")))
       .withColumn("label", getLabelUDF(col("sku")))
 
-    data3.show()
+    data3.show(false)
     data3.printSchema()
 
 
@@ -123,8 +127,8 @@ object Main{
     kerasRNN.train(model1, trainSample, params.inputDir, params.rnnName, params.logDir, params.maxEpoch, params.batchSize)
 
     /*Train rnn model using BigDL*/
-//    val rnn = new BigDLRNN()
-//    val model2 = rnn.buildModel(outSize, skuCount, params.maxLength, params.embedOutDim)
-//    rnn.train(model2, trainSample, params.inputDir, params.rnnName, params.logDir, params.maxEpoch, params.batchSize)
-  }
+  /*  val rnn = new BigDLRNN()
+    val model2 = rnn.buildModel(outSize, skuCount, params.maxLength, params.embedOutDim)
+    rnn.train(model2, trainSample, params.inputDir, params.rnnName, params.logDir, params.maxEpoch, params.batchSize)
+*/  }
 }
