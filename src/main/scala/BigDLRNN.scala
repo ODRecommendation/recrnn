@@ -1,6 +1,5 @@
 import com.intel.analytics.bigdl.Module
 import com.intel.analytics.bigdl.dataset.Sample
-import com.intel.analytics.bigdl.nn.{Sequential => _}
 import com.intel.analytics.bigdl.nn._
 import com.intel.analytics.bigdl.optim._
 import org.apache.spark.rdd.RDD
@@ -44,7 +43,8 @@ class BigDLRNN {
     val testRDD = split(1)
 
     println(model)
-    println("trainingrdd" + trainRDD.count())
+    println("trainRDD = " + trainRDD.count())
+
     val optimizer = Optimizer(
       model = model,
       sampleRDD = trainRDD,
