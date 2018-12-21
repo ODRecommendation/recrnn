@@ -12,6 +12,11 @@ libraryDependencies ++= Seq(
   "org.apache.spark" %% "spark-sql" % sparkVersion
 )
 libraryDependencies += "com.intel.analytics.zoo" % "analytics-zoo-bigdl_0.7.1-spark_2.3.1" % analyticsZooVersion
+libraryDependencies += "ml.combust.mleap" %% "mleap-spark" % "0.12.0"
+libraryDependencies += "ml.combust.mleap" %% "mleap-spark-extension" % "0.12.0"
+libraryDependencies += "com.amazonaws" % "aws-java-sdk" % "1.11.354"
+libraryDependencies += "org.scalactic" %% "scalactic" % "3.0.5"
+libraryDependencies += "org.scalatest" %% "scalatest" % "3.0.5" % "test"
 ```
 
 ## How to use
