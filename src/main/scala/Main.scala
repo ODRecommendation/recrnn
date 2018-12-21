@@ -121,7 +121,6 @@ object Main{
     data3.show()
     data3.printSchema()
 
-
     val outSize = data3.rdd.map(_.getAs[Float]("label")).max.toInt
     println(outSize)
 
