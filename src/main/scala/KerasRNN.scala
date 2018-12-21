@@ -1,10 +1,8 @@
 import com.intel.analytics.bigdl.Module
 import com.intel.analytics.bigdl.dataset.Sample
-import com.intel.analytics.bigdl.nn.ClassNLLCriterion
-import com.intel.analytics.zoo.pipeline.api.keras.models.{KerasNet, Sequential}
-import com.intel.analytics.zoo.pipeline.api.keras.layers._
-import com.intel.analytics.bigdl.utils.Shape
 import com.intel.analytics.bigdl.optim._
+import com.intel.analytics.zoo.pipeline.api.keras.layers._
+import com.intel.analytics.zoo.pipeline.api.keras.models.Sequential
 import com.intel.analytics.zoo.pipeline.api.keras.objectives.SparseCategoricalCrossEntropy
 import org.apache.spark.rdd.RDD
 
@@ -23,6 +21,7 @@ class KerasRNN {
     val model = Sequential[Float]()
 
     model.add(Embedding[Float](skuCount + 1, embedOutDim, init = "normal", inputLength = maxLength))
+      .add(GRU[Float](200, returnSequences = true))
       .add(GRU[Float](200, returnSequences = false))
       .add(Dense[Float](numClasses, activation = "log_softmax"))
     model
@@ -42,8 +41,8 @@ class KerasRNN {
     val trainRDD = split(0)
     val testRDD = split(1)
 
-    println(model.summary())
-    println("trainingrdd" + trainRDD.count())
+    model.summary()
+    println("trainRDD count = " + trainRDD.count())
 
     val optimizer = Optimizer(
       model = model,
@@ -52,14 +51,13 @@ class KerasRNN {
       batchSize = batchSize
     )
 
-
     val trained_model = optimizer
       .setOptimMethod(new RMSprop[Float]())
       .setValidation(Trigger.everyEpoch, testRDD, Array(new Top5Accuracy[Float]()), batchSize)
       .setEndWhen(Trigger.maxEpoch(maxEpoch))
       .optimize()
 
-    trained_model.saveModule(inputDir + rnnName, null, overWrite = true)
+    trained_model.saveModule(inputDir + rnnName + "Keras", null, overWrite = true)
     println("Model has been saved")
 
     trained_model
