@@ -15,10 +15,32 @@ libraryDependencies += "com.intel.analytics.zoo" % "analytics-zoo-bigdl_0.7.1-sp
 ```
 
 ## How to use
+Run model on your own data by replacing below value, if leave them blank model will run on provided sample data under modelFiles folder
 ```scala
-sbt assembly
+    val params = ModelParams(
+      maxLength = 10,
+      maxEpoch = 10,
+      batchSize = 2560,
+      embedOutDim = 200,
+      inputDir = "./modelFiles/",
+      logDir = "./log/",
+      dataName = "recrnn.csv",
+      stringIndexerName = "skuIndexer",
+      rnnName = "rnnModel"
+    )
+```
+Package code to one jar and run as spark job
+```scala
+sbt -J-Xmx2G assembly
 spark-submit --class Main ${location of assembled jar}
-
+```
+If you need to save the output file to AWS S3 bucket, simply change inputDir to your S3 path add below code to upload stringIndexerMleap model to your bucket, see below example
+```scala
+putS3Obj(
+      bucketName = "your bucketName",
+      fileKey = "path to your folder",
+      filePath = currentDir + params.stringIndexerName + ".zip"
+    )
 ```
 
 ## Contact & Feedback
