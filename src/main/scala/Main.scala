@@ -1,4 +1,4 @@
-import java.io.File
+import java.io.{BufferedWriter, File, FileOutputStream, OutputStreamWriter}
 import java.nio.file.Paths
 
 import com.amazonaws.auth.DefaultAWSCredentialsProviderChain
@@ -27,16 +27,17 @@ import scala.collection.mutable
   */
 
 case class ModelParams(
-                 maxLength: Int,
-                 maxEpoch: Int,
-                 batchSize: Int,
-                 embedOutDim: Int,
-                 inputDir: String,
-                 logDir: String,
-                 dataName: String,
-                 stringIndexerName: String,
-                 rnnName: String
-                 )
+                        maxLength: Int,
+                        maxEpoch: Int,
+                        batchSize: Int,
+                        embedOutDim: Int,
+                        inputDir: String,
+                        logDir: String,
+                        dataName: String,
+                        lookUpFileName: String,
+                        stringIndexerName: String,
+                        rnnName: String
+                      )
 
 object Main{
 
@@ -56,12 +57,13 @@ object Main{
 
     val params = ModelParams(
       maxLength = 10,
-      maxEpoch = 10,
+      maxEpoch = 5,
       batchSize = 1280,
-      embedOutDim = 200,
+      embedOutDim = 300,
       inputDir = "./modelFiles/",
       logDir = "./log/",
       dataName = "recrnn.csv",
+      lookUpFileName = "skuLookUp",
       stringIndexerName = "skuIndexer",
       rnnName = "rnnModel"
     )
@@ -76,6 +78,7 @@ object Main{
 
     /*StringIndex SKU number*/
     val data = spark.read.options(Map("header" -> "true", "delimiter" -> "|")).csv(params.inputDir + params.dataName)
+    data.printSchema()
 
     val skuCount = data.select("SKU_NUM").distinct().count().toInt
     println(skuCount)
@@ -90,6 +93,21 @@ object Main{
       .transform(data)
       .withColumn("SKU_INDEX", col("SKU_INDEX") + 1)
 
+    /*Save lookUp table for index to string revert*/
+    val lookUp = data1.select("SKU_NUM", "SKU_INDEX").distinct()
+      .rdd.map(x => {
+      val text = x.getString(0)
+      val label = x.getAs[Double](1).toInt
+      (text, label)
+    }).collect()
+
+    val file = params.inputDir + params.lookUpFileName
+    val writer = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(file)))
+    for (x <- lookUp) {
+      writer.write(x._1 + " " + x._2 + "\n")
+    }
+    writer.close()
+
     data1.show()
     data1.printSchema()
 
@@ -103,11 +121,7 @@ object Main{
 
     /*PrePad UDF*/
     def prePadding: mutable.WrappedArray[java.lang.Double] => Array[Float] = x => {
-      val item = if (x.length > params.maxLength) x.array.map(_.toFloat)
-      else Array.fill[Float](params.maxLength - x.length + 1)(0) ++ x.array.map(_.toFloat)
-      val item2 = item.takeRight(params.maxLength + 1)
-      val item3 = item2.dropRight(1)
-      item3
+      x.array.map(_.toFloat).dropRight(1).reverse.padTo(params.maxLength, 0f).reverse
     }
     val prePaddingUDF = udf(prePadding)
 
@@ -140,14 +154,14 @@ object Main{
     println("Sample label print: \n" + trainSample.take(1).head.label())
 
     /*Train rnn model using Keras API*/
-    val kerasRNN = new KerasRNN()
-    val model1 = kerasRNN.buildModel(outSize, skuCount, params.maxLength, params.embedOutDim)
-    kerasRNN.train(model1, trainSample, params.inputDir, params.rnnName, params.logDir, params.maxEpoch, params.batchSize)
+    //    val kerasRNN = new KerasRNN()
+    //    val model1 = kerasRNN.buildModel(outSize, skuCount, params.maxLength, params.embedOutDim)
+    //    kerasRNN.train(model1, trainSample, params.inputDir, params.rnnName, params.logDir, params.maxEpoch, params.batchSize)
 
     /*Train rnn model using BigDL*/
-//    val rnn = new BigDLRNN()
-//    val model2 = rnn.buildModel(outSize, skuCount, params.maxLength, params.embedOutDim)
-//    rnn.train(model2, trainSample, params.inputDir, params.rnnName, params.logDir, params.maxEpoch, params.batchSize)
+    val rnn = new BigDLRNN()
+    val model2 = rnn.buildModel(outSize, skuCount, params.maxLength, params.embedOutDim)
+    rnn.train(model2, trainSample, params.inputDir, params.rnnName, params.logDir, params.maxEpoch, params.batchSize)
   }
 
   def saveToMleap(
