@@ -57,18 +57,18 @@ object Main{
 
     val params = ModelParams(
       maxLength = 10,
-      maxEpoch = 5,
-      batchSize = 1280,
+      maxEpoch = 1,
+      batchSize = 8,
       embedOutDim = 300,
       inputDir = "./modelFiles/",
       logDir = "./log/",
-      dataName = "recrnn.csv",
+      dataName = "recRNNSample.csv",
       lookUpFileName = "skuLookUp",
       stringIndexerName = "skuIndexer",
       rnnName = "rnnModel"
     )
 
-    /*Construct BigDL session*/
+    // construct BigDL session
     val conf = new SparkConf()
       .setAppName("recRNN")
       .setMaster("local[*]")
@@ -76,25 +76,46 @@ object Main{
     val sc = NNContext.initNNContext(conf)
     val spark = SparkSession.builder().config(sc.getConf).getOrCreate()
 
-    /*StringIndex SKU number*/
-    val data = spark.read.options(Map("header" -> "true", "delimiter" -> "|")).csv(params.inputDir + params.dataName)
-    data.printSchema()
+    val (sessionDF, skuCount, skuIndexerModel) = loadPublicData(spark, params)
+    val (trainSample, outSize) = assemblyFeature(sessionDF, skuCount, skuIndexerModel, params)
 
-    val skuCount = data.select("SKU_NUM").distinct().count().toInt
+    // train rnn model using Keras API
+    val kerasRNN = new KerasRNN()
+    val model = kerasRNN.buildModel(outSize, skuCount, params.maxLength, params.embedOutDim)
+    kerasRNN.train(model, trainSample, params.inputDir, params.rnnName, params.logDir, params.maxEpoch, params.batchSize)
+    kerasRNN.predict(params.inputDir + params.rnnName + "Keras", trainSample)
+
+    /*Train rnn model using BigDL*/
+//    val rnn = new BigDLRNN()
+//    val model2 = rnn.buildModel(outSize, skuCount, params.maxLength, params.embedOutDim)
+//    rnn.train(model2, trainSample, params.inputDir, params.rnnName, params.logDir, params.maxEpoch, params.batchSize)
+  }
+
+  //  Load data using spark session interface
+  def loadPublicData(spark: SparkSession, params: ModelParams): (DataFrame, Int, StringIndexerModel) = {
+    // stringIndex SKU number
+    val sessionDF = spark.read.options(Map("header" -> "true", "delimiter" -> "|")).csv(params.inputDir + params.dataName)
+    sessionDF.printSchema()
+
+    val skuCount = sessionDF.select("SKU_NUM").distinct().count().toInt
     println(skuCount)
     val skuIndexer = new StringIndexer().setInputCol("SKU_NUM").setOutputCol("SKU_INDEX").setHandleInvalid("keep")
-    val skuIndexerModel = skuIndexer.fit(data)
+    val skuIndexerModel = skuIndexer.fit(sessionDF)
     skuIndexerModel.write.overwrite().save(params.inputDir + params.stringIndexerName)
-    saveToMleap(skuIndexerModel, data, params.stringIndexerName)
+    saveToMleap(skuIndexerModel, sessionDF, params.stringIndexerName)
     println("SkuIndexerModel has been saved")
+    (sessionDF, skuCount, skuIndexerModel)
+  }
 
-    /*StringIndex the sku number and adjust the starting index to 1*/
-    val data1 = skuIndexerModel
-      .transform(data)
+  // convert features to RDD[Sample[FLoat]]
+  def assemblyFeature(sessionDF: DataFrame, skuCount: Int, skuIndexerModel: StringIndexerModel, params: ModelParams) = {
+    // stringIndex the sku number and adjust the starting index to 1
+    val indexedDF = skuIndexerModel
+      .transform(sessionDF)
       .withColumn("SKU_INDEX", col("SKU_INDEX") + 1)
 
-    /*Save lookUp table for index to string revert*/
-    val lookUp = data1.select("SKU_NUM", "SKU_INDEX").distinct()
+    // save lookUp table for index to string revert
+    val lookUp = indexedDF.select("SKU_NUM", "SKU_INDEX").distinct()
       .rdd.map(x => {
       val text = x.getString(0)
       val label = x.getAs[Double](1).toInt
@@ -108,42 +129,42 @@ object Main{
     }
     writer.close()
 
-    data1.show()
-    data1.printSchema()
+    indexedDF.show()
+    indexedDF.printSchema()
 
-    /*Collect item to sequence*/
-    val data2 = data1.groupBy("SESSION_ID")
+    // collect item to sequence
+    val seqDF = indexedDF.groupBy("SESSION_ID")
       .agg(collect_list("SKU_INDEX").alias("sku"))
       .filter(col("sku").isNotNull)
 
-    data2.printSchema()
-    data2.show()
+    seqDF.printSchema()
+    seqDF.show()
 
-    /*PrePad UDF*/
+    // prePad UDF
     def prePadding: mutable.WrappedArray[java.lang.Double] => Array[Float] = x => {
       x.array.map(_.toFloat).dropRight(1).reverse.padTo(params.maxLength, 0f).reverse
     }
     val prePaddingUDF = udf(prePadding)
 
-    /*Get label UDF*/
+    // get label UDF
     def getLabel: mutable.WrappedArray[java.lang.Double] => Float = x => {
       x.takeRight(1).head.floatValue() + 1
     }
     val getLabelUDF = udf(getLabel)
 
-    val data3 = data2
+    val trainDF = seqDF
       .withColumn("features", prePaddingUDF(col("sku")))
       .withColumn("label", getLabelUDF(col("sku")))
 
-    data3.show(false)
-    data3.printSchema()
+    trainDF.show(false)
+    trainDF.printSchema()
 
 
-    val outSize = data3.rdd.map(_.getAs[Float]("label")).max.toInt
+    val outSize = trainDF.rdd.map(_.getAs[Float]("label")).max.toInt
     println(outSize)
 
-    /*DataFrame to sample*/
-    val trainSample = data3.rdd.map(r => {
+    // dataFrame to sample
+    val trainSample = trainDF.rdd.map(r => {
       val label = Tensor[Float](T(r.getAs[Float]("label")))
       val array = r.getAs[mutable.WrappedArray[java.lang.Float]]("features").array.map(_.toFloat)
       val vec = Tensor(array, Array(params.maxLength))
@@ -153,17 +174,10 @@ object Main{
     println("Sample feature print: \n"+ trainSample.take(1).head.feature())
     println("Sample label print: \n" + trainSample.take(1).head.label())
 
-    /*Train rnn model using Keras API*/
-    //    val kerasRNN = new KerasRNN()
-    //    val model1 = kerasRNN.buildModel(outSize, skuCount, params.maxLength, params.embedOutDim)
-    //    kerasRNN.train(model1, trainSample, params.inputDir, params.rnnName, params.logDir, params.maxEpoch, params.batchSize)
-
-    /*Train rnn model using BigDL*/
-    val rnn = new BigDLRNN()
-    val model2 = rnn.buildModel(outSize, skuCount, params.maxLength, params.embedOutDim)
-    rnn.train(model2, trainSample, params.inputDir, params.rnnName, params.logDir, params.maxEpoch, params.batchSize)
+    (trainSample, outSize)
   }
 
+  // save mLeap serialized transformer
   def saveToMleap(
                    indexerModel: StringIndexerModel,
                    data: DataFrame,
