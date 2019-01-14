@@ -1,6 +1,8 @@
 import com.intel.analytics.bigdl.Module
 import com.intel.analytics.bigdl.dataset.Sample
+import com.intel.analytics.bigdl.nn.Module
 import com.intel.analytics.bigdl.optim._
+import com.intel.analytics.zoo.models.common.ZooModel
 import com.intel.analytics.zoo.pipeline.api.keras.layers._
 import com.intel.analytics.zoo.pipeline.api.keras.models.Sequential
 import com.intel.analytics.zoo.pipeline.api.keras.objectives.SparseCategoricalCrossEntropy
@@ -20,10 +22,12 @@ class KerasRNN {
                 ): Sequential[Float] = {
     val model = Sequential[Float]()
 
-    model.add(Embedding[Float](skuCount + 1, embedOutDim, init = "normal", inputLength = maxLength))
+    model
+      .add(Embedding[Float](skuCount + 1, embedOutDim, init = "normal", inputLength = maxLength))
       .add(GRU[Float](200, returnSequences = true))
       .add(GRU[Float](200, returnSequences = false))
       .add(Dense[Float](numClasses, activation = "log_softmax"))
+
     model
   }
 
@@ -61,5 +65,15 @@ class KerasRNN {
     println("Model has been saved")
 
     trained_model
+  }
+
+  def predict(
+             path: String,
+             testRDD: RDD[Sample[Float]]
+             ) = {
+    val model = Module.loadModule[Float](path)
+    model.predictClass(testRDD).foreach(
+      println(_)
+    )
   }
 }
