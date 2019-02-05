@@ -9,7 +9,7 @@ class ModelTest extends FunSuite{
         val outSize = 30
         val skuCount = 30
 
-        val kerasRNN = new KerasRNN()
+        val kerasRNN = new SessionRecommender()
         val model1 = kerasRNN.buildModel(outSize, skuCount, 10, 20)
 
          val feature = Tensor(Array(2.0f,4,6,8,10,12,14,16,18,20),Array(1,10))

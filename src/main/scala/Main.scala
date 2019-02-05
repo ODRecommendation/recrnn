@@ -80,7 +80,7 @@ object Main{
     val (trainSample, outSize) = assemblyFeature(sessionDF, skuCount, skuIndexerModel, params)
 
     // train rnn model using Keras API
-    val kerasRNN = new KerasRNN()
+    val kerasRNN = new SessionRecommender()
     val model = kerasRNN.buildModel(outSize, skuCount, params.maxLength, params.embedOutDim)
     kerasRNN.train(model, trainSample, params.inputDir, params.rnnName, params.logDir, params.maxEpoch, params.batchSize)
     kerasRNN.predict(params.inputDir + params.rnnName + "Keras", trainSample)
