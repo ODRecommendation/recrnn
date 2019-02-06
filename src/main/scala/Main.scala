@@ -81,9 +81,9 @@ object Main{
 
     // train rnn model using Keras API
     val kerasRNN = new SessionRecommender()
-    val model = kerasRNN.buildModel(outSize, skuCount, params.maxLength, params.embedOutDim)
-    kerasRNN.train(model, trainSample, params.inputDir, params.rnnName, params.logDir, params.maxEpoch, params.batchSize)
-    kerasRNN.predict(params.inputDir + params.rnnName + "Keras", trainSample)
+//    val model = kerasRNN.buildModel(outSize, skuCount, params.maxLength, params.embedOutDim)
+//    kerasRNN.train(model, trainSample, params.inputDir, params.rnnName, params.logDir, params.maxEpoch, params.batchSize)
+//    kerasRNN.predict(params.inputDir + params.rnnName + "Keras", trainSample)
 
     /*Train rnn model using BigDL*/
 //    val rnn = new BigDLRNN()
