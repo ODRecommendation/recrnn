@@ -5,6 +5,7 @@ import com.intel.analytics.bigdl.nn.abstractnn.AbstractModule
 import com.intel.analytics.bigdl.optim._
 import com.intel.analytics.bigdl.tensor.Tensor
 import com.intel.analytics.bigdl.tensor.TensorNumericMath.TensorNumeric
+import com.intel.analytics.bigdl.utils.T
 import com.intel.analytics.zoo.models.common.ZooModel
 import com.intel.analytics.zoo.models.recommendation.Recommender
 //import com.intel.analytics.zoo.pipeline.api.keras.layers._
@@ -24,8 +25,8 @@ class SessionRecommender[T: ClassTag](
                              val numClasses: Int,
                              val userEmbed: Int = 20,
                              val itemEmbed: Int = 20,
-                             val hiddenLayers: Array[Int] = Array(40, 20, 10),
-                             val includeMF: Boolean = true,
+                             val mlpHiddenLayers: Array[Int] = Array(40, 20, 10),
+                             val includeNCF: Boolean = true,
                              val mfEmbed: Int = 20,
                              val maxLength: Int = 10
                                      )(implicit ev: TensorNumeric[T])
@@ -35,26 +36,29 @@ class SessionRecommender[T: ClassTag](
     val model = Sequential[T]()
     val ncf = Sequential[T]()
     val rnn = Sequential[T]()
-
-    val mlpUserTable = LookupTable[T](userCount, userEmbed)
-    val mlpItemTable = LookupTable[T](itemCount, itemEmbed)
     val rnnTable = LookupTable[T](itemCount, itemEmbed)
-    mlpUserTable.setWeightsBias(Array(Tensor[T](userCount, userEmbed).randn(0, 0.1)))
-    mlpItemTable.setWeightsBias(Array(Tensor[T](itemCount, itemEmbed).randn(0, 0.1)))
     rnnTable.setWeightsBias(Array(Tensor[T](itemCount, itemEmbed).randn(0, 0.1)))
-    val mlpEmbeddedLayer = Concat[T](2)
-      .add(Sequential[T]().add(Select(2, 1)).add(mlpUserTable))
-      .add(Sequential[T]().add(Select(2, 2)).add(mlpItemTable))
-    val mlpModel = Sequential[T]()
-    mlpModel.add(mlpEmbeddedLayer)
-    val linear1 = Linear[T](itemEmbed + userEmbed, hiddenLayers(0))
-    mlpModel.add(linear1).add(ReLU())
-    for (i <- 1 until hiddenLayers.length) {
-      mlpModel.add(Linear(hiddenLayers(i - 1), hiddenLayers(i))).add(ReLU())
-    }
+    val rnnModel = rnn
+      .add(LookupTable[T](itemCount, itemEmbed))
+      .add(Recurrent[T]().add(GRU(itemEmbed, 200)))
+      .add(Select(2, -1))
 
-    if (includeMF) {
-      require(mfEmbed > 0, s"please provide meaningful number of embedding units")
+    if (includeNCF) {
+      val mlpUserTable = LookupTable[T](userCount, userEmbed)
+      val mlpItemTable = LookupTable[T](itemCount, itemEmbed)
+      mlpUserTable.setWeightsBias(Array(Tensor[T](userCount, userEmbed).randn(0, 0.1)))
+      mlpItemTable.setWeightsBias(Array(Tensor[T](itemCount, itemEmbed).randn(0, 0.1)))
+      val mlpEmbeddedLayer = Concat[T](2)
+        .add(Sequential[T]().add(Select(2, 1)).add(mlpUserTable))
+        .add(Sequential[T]().add(Select(2, 2)).add(mlpItemTable))
+      val mlpModel = Sequential[T]()
+      mlpModel.add(mlpEmbeddedLayer)
+      val linear1 = Linear[T](itemEmbed + userEmbed, mlpHiddenLayers(0))
+      mlpModel.add(linear1).add(ReLU())
+      for (i <- 1 until mlpHiddenLayers.length) {
+        mlpModel.add(Linear(mlpHiddenLayers(i - 1), mlpHiddenLayers(i))).add(ReLU())
+      }
+
       val mfUserTable: LookupTable[T] = LookupTable[T](userCount, mfEmbed)
       val mfItemTable = LookupTable[T](itemCount, mfEmbed)
       mfUserTable.setWeightsBias(Array(Tensor[T](userCount, mfEmbed).randn(0, 0.1)))
@@ -64,33 +68,59 @@ class SessionRecommender[T: ClassTag](
         .add(Sequential[T]().add(Select(2, 2)).add(mfItemTable))
       val mfModel = Sequential[T]()
       mfModel.add(mfEmbeddedLayer).add(CMulTable())
-      val concatedModel = Concat(2).add(mfModel).add(mlpModel)
-      ncf.add(concatedModel)
+      val ncfModel = Concat(2).add(mfModel).add(mlpModel)
+      ncf.add(ncfModel)
+
+      //    model
+      //      .add(Embedding[T](itemCount + 1, itemEmbed, init = "normal", inputLength = maxLength))
+      //      .add(GRU[T](200, returnSequences = true))
+      //      .add(GRU[T](200, returnSequences = false))
+      //      .add(Dense[T](numClasses, activation = "log_softmax"))
+
+      val srModel = Concat(2).add(ncf).add(rnnModel)
+      model.add(srModel).add(Linear(mfEmbed + mlpHiddenLayers.last + 200, numClasses))
     }
     else {
-      ncf.add(mlpModel)
+      model.add(rnnModel).add(Linear(200, numClasses))
     }
-
-//    model
-//      .add(Embedding[T](itemCount + 1, itemEmbed, init = "normal", inputLength = maxLength))
-//      .add(GRU[T](200, returnSequences = true))
-//      .add(GRU[T](200, returnSequences = false))
-//      .add(Dense[T](numClasses, activation = "log_softmax"))
-
-    val rnnModel = rnn
-//      .add(AddConstant(1))
-      .add(LookupTable[T](itemCount, itemEmbed))
-      .add(Recurrent[T]().add(GRU(itemEmbed, 200)))
-      .add(Select(2, -1))
-
-    val srModel = Concat(2).add(ncf).add(rnnModel)
-    model.add(srModel).add(Linear(mfEmbed + hiddenLayers.last + 200, numClasses))
-
+    model.add(LogSoftMax[T]())
+    model.summary()
     model.asInstanceOf[AbstractModule[Tensor[T], Tensor[T], T]]
   }
 }
 
 object SessionRecommender {
+
+  def apply[@specialized(Float, Double) T: ClassTag](
+                                                      userCount: Int,
+                                                      itemCount: Int,
+                                                      numClasses: Int,
+                                                      userEmbed: Int = 20,
+                                                      itemEmbed: Int = 20,
+                                                      mlpHiddenLayers: Array[Int] = Array(40, 20, 10),
+                                                      includeNCF: Boolean = true,
+                                                      mfEmbed: Int = 20,
+                                                      maxLength: Int = 10
+                                                    )(implicit ev: TensorNumeric[T]): SessionRecommender[T] = {
+    new SessionRecommender[T](
+      userCount,
+      itemCount,
+      numClasses,
+      userEmbed,
+      itemEmbed,
+      mlpHiddenLayers,
+      includeNCF,
+      mfEmbed,
+      maxLength
+    ).build()
+  }
+
+  def loadModel[T: ClassTag](
+                              path: String,
+                              weightPath: String = null
+                            )(implicit ev: TensorNumeric[T]): SessionRecommender[T] = {
+    ZooModel.loadModel(path, weightPath).asInstanceOf[SessionRecommender[T]]
+  }
 
   def train(
              model: Sequential[Float],
