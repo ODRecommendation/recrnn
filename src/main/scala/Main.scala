@@ -4,10 +4,11 @@ import java.nio.file.Paths
 import com.amazonaws.auth.DefaultAWSCredentialsProviderChain
 import com.amazonaws.regions.Regions
 import com.amazonaws.services.s3.AmazonS3ClientBuilder
-import com.intel.analytics.bigdl.dataset.Sample
+import com.intel.analytics.bigdl.dataset.{Sample, TensorSample}
 import com.intel.analytics.bigdl.tensor.Tensor
 import com.intel.analytics.bigdl.utils.T
 import com.intel.analytics.zoo.common.NNContext
+import com.intel.analytics.zoo.models.recommendation.{Utils, WideAndDeep}
 import ml.combust.bundle.BundleFile
 import ml.combust.mleap.spark.SparkSupport._
 import org.apache.log4j.{Level, Logger}
@@ -16,10 +17,12 @@ import org.apache.spark.ml.bundle.SparkBundleContext
 import org.apache.spark.ml.feature.{StringIndexerModel, _}
 import org.apache.spark.ml.mleap.SparkUtil
 import org.apache.spark.sql.functions._
+import org.apache.spark.sql.types.IntegerType
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import resource.managed
 
 import scala.collection.mutable
+import scala.util.Random
 
 /**
   * Created by luyangwang on Dec, 2018
@@ -33,9 +36,11 @@ case class ModelParams(
                         embedOutDim: Int,
                         inputDir: String,
                         logDir: String,
-                        dataName: String,
+                        rnnData: String,
+                        ncfData: String,
                         lookUpFileName: String,
-                        stringIndexerName: String,
+                        userIndexerName: String,
+                        itemIndexerName: String,
                         rnnName: String
                       )
 
@@ -57,14 +62,16 @@ object Main{
 
     val params = ModelParams(
       maxLength = 10,
-      maxEpoch = 1,
-      batchSize = 8,
+      maxEpoch = 2,
+      batchSize = 64,
       embedOutDim = 300,
       inputDir = "./modelFiles/",
       logDir = "./log/",
-      dataName = "recRNNSample.csv",
+      rnnData = "rnnData.csv",
+      ncfData = "ncfData.csv",
       lookUpFileName = "skuLookUp",
-      stringIndexerName = "skuIndexer",
+      userIndexerName = "userIndexer",
+      itemIndexerName = "itemIndexer",
       rnnName = "rnnModel"
     )
 
@@ -76,11 +83,18 @@ object Main{
     val sc = NNContext.initNNContext(conf)
     val spark = SparkSession.builder().config(sc.getConf).getOrCreate()
 
-    val (sessionDF, skuCount, skuIndexerModel) = loadPublicData(spark, params)
-    val (trainSample, outSize) = assemblyFeature(sessionDF, skuCount, skuIndexerModel, params)
+    val (sessionDF, historyDF, userCount, itemCount, userIndexerModel,itemIndexerModel) = loadPublicData(spark, params)
+    val (trainSample, outSize) = assemblyFeature(sessionDF, historyDF, userCount, itemCount, userIndexerModel, itemIndexerModel, params)
+    val sr = SessionRecommender[Float](
+      userCount, itemCount, outSize + 2
+    )
+    SessionRecommender.train(
+      sr, trainSample, "modelFiles", "sr", "log", params.maxEpoch, params.batchSize
+    )
 
-    // train rnn model using Keras API
-    val kerasRNN = new SessionRecommender()
+//
+//    // train rnn model using Keras API
+//    val kerasRNN = new SessionRecommender()
 //    val model = kerasRNN.buildModel(outSize, skuCount, params.maxLength, params.embedOutDim)
 //    kerasRNN.train(model, trainSample, params.inputDir, params.rnnName, params.logDir, params.maxEpoch, params.batchSize)
 //    kerasRNN.predict(params.inputDir + params.rnnName + "Keras", trainSample)
@@ -92,33 +106,54 @@ object Main{
   }
 
   //  Load data using spark session interface
-  def loadPublicData(spark: SparkSession, params: ModelParams): (DataFrame, Int, StringIndexerModel) = {
+  def loadPublicData(spark: SparkSession, params: ModelParams) = {
     // stringIndex SKU number
-    val sessionDF = spark.read.options(Map("header" -> "true", "delimiter" -> "|")).csv(params.inputDir + params.dataName)
+    val sessionDF = spark.read.options(Map("header" -> "true", "delimiter" -> ",")).csv(params.inputDir + params.rnnData)
     sessionDF.printSchema()
+    val historyDF = spark.read.options(Map("header" -> "true", "delimiter" -> ",")).csv(params.inputDir + params.ncfData)
+    historyDF.printSchema()
 
-    val skuCount = sessionDF.select("SKU_NUM").distinct().count().toInt
-    println(skuCount)
-    val skuIndexer = new StringIndexer().setInputCol("SKU_NUM").setOutputCol("SKU_INDEX").setHandleInvalid("keep")
-    val skuIndexerModel = skuIndexer.fit(sessionDF)
-    skuIndexerModel.write.overwrite().save(params.inputDir + params.stringIndexerName)
-    saveToMleap(skuIndexerModel, sessionDF, params.stringIndexerName)
+    val userCount = historyDF.select("AGENT_ID").distinct().count().toInt + 1
+    println("userCount = " + userCount)
+    val itemCount = sessionDF.select("SKU_NUM").distinct().count().toInt + 1
+    println("itemCount = " + itemCount)
+    val userIndexer = new StringIndexer().setInputCol("AGENT_ID").setOutputCol("userId").setHandleInvalid("keep")
+    val itemIndexer = new StringIndexer().setInputCol("SKU_NUM").setOutputCol("SKU_INDEX").setHandleInvalid("keep")
+    val userIndexerModel = userIndexer.fit(historyDF)
+    val itemIndexerModel = itemIndexer.fit(sessionDF)
+    userIndexerModel.write.overwrite().save(params.inputDir + params.userIndexerName)
+    itemIndexerModel.write.overwrite().save(params.inputDir + params.itemIndexerName)
+    saveToMleap(itemIndexerModel, sessionDF, params.userIndexerName)
+    saveToMleap(itemIndexerModel, sessionDF, params.itemIndexerName)
     println("SkuIndexerModel has been saved")
-    (sessionDF, skuCount, skuIndexerModel)
+    (sessionDF, historyDF, userCount, itemCount, userIndexerModel, itemIndexerModel)
   }
 
   // convert features to RDD[Sample[FLoat]]
-  def assemblyFeature(sessionDF: DataFrame, skuCount: Int, skuIndexerModel: StringIndexerModel, params: ModelParams) = {
+  def assemblyFeature(
+                       sessionDF: DataFrame,
+                       historyDF: DataFrame,
+                       userCount: Int,
+                       itemCount: Int,
+                       userIndexerModel: StringIndexerModel,
+                       itemIndexerModel: StringIndexerModel,
+                       params: ModelParams
+                     ) = {
+//    val joined = sessionDF.join(historyDF, Array("AGENT_ID")).distinct()
+//    joined.show()
     // stringIndex the sku number and adjust the starting index to 1
-    val indexedDF = skuIndexerModel
+    val indexedSessionDF = itemIndexerModel
       .transform(sessionDF)
-      .withColumn("SKU_INDEX", col("SKU_INDEX") + 1)
+      .withColumn("SKU_INDEX", col("SKU_INDEX") + 2)
+    val indexedHistoryDF = itemIndexerModel.transform(historyDF)
+      .withColumn("SKU_INDEX", col("SKU_INDEX") + 2)
+      .select("AGENT_ID", "SKU_INDEX")
 
     // save lookUp table for index to string revert
-    val lookUp = indexedDF.select("SKU_NUM", "SKU_INDEX").distinct()
+    val lookUp = indexedSessionDF.select("SKU_NUM", "SKU_INDEX").distinct()
       .rdd.map(x => {
       val text = x.getString(0)
-      val label = x.getAs[Double](1).toInt
+      val label = x.getAs[Double](1)
       (text, label)
     }).collect()
 
@@ -129,11 +164,11 @@ object Main{
     }
     writer.close()
 
-    indexedDF.show()
-    indexedDF.printSchema()
+    indexedSessionDF.show()
+    indexedSessionDF.printSchema()
 
     // collect item to sequence
-    val seqDF = indexedDF.groupBy("SESSION_ID")
+    val seqDF = indexedSessionDF.groupBy("SESSION_ID", "AGENT_ID")
       .agg(collect_list("SKU_INDEX").alias("sku"))
       .filter(col("sku").isNotNull)
 
@@ -142,36 +177,89 @@ object Main{
 
     // prePad UDF
     def prePadding: mutable.WrappedArray[java.lang.Double] => Array[Float] = x => {
-      x.array.map(_.toFloat).dropRight(1).reverse.padTo(params.maxLength, 0f).reverse
+      x.array.map(_.toFloat).dropRight(1).reverse.padTo(params.maxLength, 1f).reverse
     }
     val prePaddingUDF = udf(prePadding)
 
     // get label UDF
     def getLabel: mutable.WrappedArray[java.lang.Double] => Float = x => {
-      x.takeRight(1).head.floatValue() + 1
+      x.takeRight(1).head.floatValue()
     }
     val getLabelUDF = udf(getLabel)
 
-    val trainDF = seqDF
-      .withColumn("features", prePaddingUDF(col("sku")))
+    val rnnDF = seqDF
+      .withColumn("rnnItem", prePaddingUDF(col("sku")))
       .withColumn("label", getLabelUDF(col("sku")))
+      .select("AGENT_ID", "rnnItem", "label")
 
-    trainDF.show(false)
-    trainDF.printSchema()
+    rnnDF.show(false)
+    rnnDF.printSchema()
 
-
-    val outSize = trainDF.rdd.map(_.getAs[Float]("label")).max.toInt
+    val outSize = rnnDF.rdd.map(_.getAs[Float]("label")).max.toInt
     println(outSize)
 
+    val seqDF1 = indexedHistoryDF.groupBy("AGENT_ID")
+      .agg(collect_list("SKU_INDEX").alias("history"))
+      .filter(col("history").isNotNull)
+
+    val cfDF = seqDF1.withColumn("history", prePaddingUDF(col("history")))
+    cfDF.show()
+
+    val joined = cfDF.join(rnnDF, Array("AGENT_ID"))
+        .filter(size(col("history")) <= 10).filter(size(col("rnnItem")) <= 10)
+        .distinct()
+    joined.show(false)
+
+//    def getNegative(indexed: DataFrame): DataFrame = {
+//      val schema = indexed.schema
+//      require(schema.fieldNames.contains("userId"), s"Column userId should exist")
+//      require(schema.fieldNames.contains("itemId"), s"Column itemId should exist")
+//      require(schema.fieldNames.contains("RATING"), s"Column label should exist")
+//
+//      val indexedDF = indexed.select("userId", "itemId", "RATING")
+//      val minMaxRow = indexedDF.agg(max("userId"), max("itemId")).collect()(0)
+//      val (userCount, itemCount) = (minMaxRow.getInt(0), minMaxRow.getInt(1))
+//      val sampleDict = indexedDF.rdd.map(row => row(0) + "," + row(1)).collect().toSet
+//
+//      val dfCount = indexedDF.count.toInt
+//
+//      import indexed.sqlContext.implicits._
+//
+//      @transient lazy val ran = new Random(System.nanoTime())
+//
+//      val negative = indexedDF.rdd
+//        .map(x => {
+//          val uid = x.getAs[Int](0)
+//          val iid = Math.max(ran.nextInt(itemCount), 1)
+//          (uid, iid)
+//        })
+//        .filter(x => !sampleDict.contains(x._1 + "," + x._2)).distinct()
+//        .map(x => (x._1, x._2, 1))
+//        .toDF("userId", "itemId", "RATING")
+//
+//      negative
+//    }
+//    val negative = getNegative(indexedHistoryDF1)
+//    val unioned = negative.union(indexedHistoryDF1)
+//
+//    val joined = rnnDF.join(unioned, Array("userId")).distinct()
+//
+//    joined.show()
+
     // dataFrame to sample
-    val trainSample = trainDF.rdd.map(r => {
+    val trainSample = joined.rdd.map(r => {
       val label = Tensor[Float](T(r.getAs[Float]("label")))
-      val array = r.getAs[mutable.WrappedArray[java.lang.Float]]("features").array.map(_.toFloat)
-      val vec = Tensor(array, Array(params.maxLength))
-      Sample(vec, label)
+      val mlpFeature = r.getAs[mutable.WrappedArray[java.lang.Float]]("history").array.map(_.toFloat)
+      val rnnFeature = r.getAs[mutable.WrappedArray[java.lang.Float]]("rnnItem").array.map(_.toFloat)
+      val mlpSample = Tensor(mlpFeature, Array(params.maxLength))
+      val rnnSample = Tensor(rnnFeature, Array(params.maxLength))
+      TensorSample[Float](Array(mlpSample, rnnSample), Array(label))
+//      val feature = Array(mlpFeature, rnnFeature)
+//      Sample(feature, label)
     })
 
-    println("Sample feature print: \n"+ trainSample.take(1).head.feature())
+    println("Sample feature print: \n"+ trainSample.take(1).head.feature(0))
+    println("Sample feature print: \n"+ trainSample.take(1).head.feature(1))
     println("Sample label print: \n" + trainSample.take(1).head.label())
 
     (trainSample, outSize)
