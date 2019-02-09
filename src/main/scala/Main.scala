@@ -5,9 +5,11 @@ import com.amazonaws.auth.DefaultAWSCredentialsProviderChain
 import com.amazonaws.regions.Regions
 import com.amazonaws.services.s3.AmazonS3ClientBuilder
 import com.intel.analytics.bigdl.dataset.TensorSample
+import com.intel.analytics.bigdl.optim.{Optimizer, RMSprop, Top5Accuracy, Trigger}
 import com.intel.analytics.bigdl.tensor.Tensor
 import com.intel.analytics.bigdl.utils.T
 import com.intel.analytics.zoo.common.NNContext
+import com.intel.analytics.zoo.pipeline.api.keras.objectives.SparseCategoricalCrossEntropy
 import ml.combust.bundle.BundleFile
 import ml.combust.mleap.spark.SparkSupport._
 import org.apache.log4j.{Level, Logger}
@@ -31,6 +33,8 @@ case class ModelParams(
                         maxEpoch: Int,
                         batchSize: Int,
                         embedOutDim: Int,
+                        learningRate: Double = 1e-3,
+                        learningRateDecay: Double = 1e-6,
                         inputDir: String,
                         logDir: String,
                         rnnData: String,
@@ -83,11 +87,37 @@ object Main{
     val (sessionDF, historyDF, userCount, itemCount, userIndexerModel,itemIndexerModel) = loadPublicData(spark, params)
     val (trainSample, outSize) = assemblyFeature(sessionDF, historyDF, userCount, itemCount, userIndexerModel, itemIndexerModel, params)
     val sr = SessionRecommender[Float](
-      userCount, itemCount, outSize + 2
+      itemCount = itemCount,
+      numClasses = outSize + 2,
+      itemEmbed = params.embedOutDim,
+      includeCF = true,
+      maxLength = params.maxLength
     )
-    SessionRecommender.train(
-      sr, trainSample, "modelFiles", "sr", "log", params.maxEpoch, params.batchSize
+
+    val Array(trainRdd, testRdd) = trainSample.randomSplit(Array(0.8, 0.2), 100)
+
+    println("trainRDD count = " + trainRdd.count())
+
+    val optimizer = Optimizer(
+      model = sr,
+      sampleRDD = trainRdd,
+      criterion = new SparseCategoricalCrossEntropy[Float](logProbAsInput = true, zeroBasedLabel = false),
+      batchSize = params.batchSize
     )
+
+    val optimMethod = new RMSprop[Float](
+      learningRate = params.learningRate,
+      learningRateDecay = params.learningRateDecay
+    )
+
+    val trained_model = optimizer.setOptimMethod(optimMethod)
+      .setValidation(Trigger.everyEpoch, testRdd, Array(new Top5Accuracy[Float]()), params.batchSize)
+      .setEndWhen(Trigger.maxEpoch(params.maxEpoch))
+      .optimize()
+
+    trained_model.saveModule(params.inputDir + params.rnnName, null, overWrite = true)
+    println("Model has been saved")
+
   }
 
   //  Load data using spark session interface
@@ -225,6 +255,7 @@ object Main{
     }
   }
 
+  // upload file to s3
   def putS3Obj(
                 bucketName: String,
                 fileKey: String,
