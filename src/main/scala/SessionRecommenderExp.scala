@@ -45,7 +45,7 @@ case class ModelParams(
                         rnnName: String
                       )
 
-object Main{
+object SessionRecommenderExp {
 
   private val s3client = AmazonS3ClientBuilder.standard()
     .withRegion(Regions.CN_NORTH_1)
