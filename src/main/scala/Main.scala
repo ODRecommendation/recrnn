@@ -4,11 +4,10 @@ import java.nio.file.Paths
 import com.amazonaws.auth.DefaultAWSCredentialsProviderChain
 import com.amazonaws.regions.Regions
 import com.amazonaws.services.s3.AmazonS3ClientBuilder
-import com.intel.analytics.bigdl.dataset.{Sample, TensorSample}
+import com.intel.analytics.bigdl.dataset.TensorSample
 import com.intel.analytics.bigdl.tensor.Tensor
 import com.intel.analytics.bigdl.utils.T
 import com.intel.analytics.zoo.common.NNContext
-import com.intel.analytics.zoo.models.recommendation.{Utils, WideAndDeep}
 import ml.combust.bundle.BundleFile
 import ml.combust.mleap.spark.SparkSupport._
 import org.apache.log4j.{Level, Logger}
@@ -17,12 +16,10 @@ import org.apache.spark.ml.bundle.SparkBundleContext
 import org.apache.spark.ml.feature.{StringIndexerModel, _}
 import org.apache.spark.ml.mleap.SparkUtil
 import org.apache.spark.sql.functions._
-import org.apache.spark.sql.types.IntegerType
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import resource.managed
 
 import scala.collection.mutable
-import scala.util.Random
 
 /**
   * Created by luyangwang on Dec, 2018
@@ -91,18 +88,6 @@ object Main{
     SessionRecommender.train(
       sr, trainSample, "modelFiles", "sr", "log", params.maxEpoch, params.batchSize
     )
-
-//
-//    // train rnn model using Keras API
-//    val kerasRNN = new SessionRecommender()
-//    val model = kerasRNN.buildModel(outSize, skuCount, params.maxLength, params.embedOutDim)
-//    kerasRNN.train(model, trainSample, params.inputDir, params.rnnName, params.logDir, params.maxEpoch, params.batchSize)
-//    kerasRNN.predict(params.inputDir + params.rnnName + "Keras", trainSample)
-
-    /*Train rnn model using BigDL*/
-//    val rnn = new BigDLRNN()
-//    val model2 = rnn.buildModel(outSize, skuCount, params.maxLength, params.embedOutDim)
-//    rnn.train(model2, trainSample, params.inputDir, params.rnnName, params.logDir, params.maxEpoch, params.batchSize)
   }
 
   //  Load data using spark session interface
@@ -177,7 +162,8 @@ object Main{
 
     // prePad UDF
     def prePadding: mutable.WrappedArray[java.lang.Double] => Array[Float] = x => {
-      x.array.map(_.toFloat).dropRight(1).reverse.padTo(params.maxLength, 1f).reverse
+      if (x.array.size <= 10) x.array.map(_.toFloat).dropRight(1).reverse.padTo(params.maxLength, 1f).reverse
+      else x.array.map(_.toFloat).dropRight(1).takeRight(10)
     }
     val prePaddingUDF = udf(prePadding)
 
@@ -205,46 +191,8 @@ object Main{
     val cfDF = seqDF1.withColumn("history", prePaddingUDF(col("history")))
     cfDF.show()
 
-    val joined = cfDF.join(rnnDF, Array("AGENT_ID"))
-        .filter(size(col("history")) <= 10).filter(size(col("rnnItem")) <= 10)
-        .distinct()
+    val joined = cfDF.join(rnnDF, Array("AGENT_ID")).distinct()
     joined.show(false)
-
-//    def getNegative(indexed: DataFrame): DataFrame = {
-//      val schema = indexed.schema
-//      require(schema.fieldNames.contains("userId"), s"Column userId should exist")
-//      require(schema.fieldNames.contains("itemId"), s"Column itemId should exist")
-//      require(schema.fieldNames.contains("RATING"), s"Column label should exist")
-//
-//      val indexedDF = indexed.select("userId", "itemId", "RATING")
-//      val minMaxRow = indexedDF.agg(max("userId"), max("itemId")).collect()(0)
-//      val (userCount, itemCount) = (minMaxRow.getInt(0), minMaxRow.getInt(1))
-//      val sampleDict = indexedDF.rdd.map(row => row(0) + "," + row(1)).collect().toSet
-//
-//      val dfCount = indexedDF.count.toInt
-//
-//      import indexed.sqlContext.implicits._
-//
-//      @transient lazy val ran = new Random(System.nanoTime())
-//
-//      val negative = indexedDF.rdd
-//        .map(x => {
-//          val uid = x.getAs[Int](0)
-//          val iid = Math.max(ran.nextInt(itemCount), 1)
-//          (uid, iid)
-//        })
-//        .filter(x => !sampleDict.contains(x._1 + "," + x._2)).distinct()
-//        .map(x => (x._1, x._2, 1))
-//        .toDF("userId", "itemId", "RATING")
-//
-//      negative
-//    }
-//    val negative = getNegative(indexedHistoryDF1)
-//    val unioned = negative.union(indexedHistoryDF1)
-//
-//    val joined = rnnDF.join(unioned, Array("userId")).distinct()
-//
-//    joined.show()
 
     // dataFrame to sample
     val trainSample = joined.rdd.map(r => {
@@ -254,8 +202,6 @@ object Main{
       val mlpSample = Tensor(mlpFeature, Array(params.maxLength))
       val rnnSample = Tensor(rnnFeature, Array(params.maxLength))
       TensorSample[Float](Array(mlpSample, rnnSample), Array(label))
-//      val feature = Array(mlpFeature, rnnFeature)
-//      Sample(feature, label)
     })
 
     println("Sample feature print: \n"+ trainSample.take(1).head.feature(0))

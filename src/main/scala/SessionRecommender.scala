@@ -35,9 +35,9 @@ class SessionRecommender[T: ClassTag](
   override def buildModel(): AbstractModule[Tensor[T], Tensor[T], T] = {
     val model = Sequential[T]()
     val mlp = Sequential[T]().setName("mlp")
-    mlp.add(LookupTable[T](itemCount, itemEmbed))
-      .add(Select(2, -1))
-      .add(Linear(itemEmbed, numClasses))
+//    mlp.add(LookupTable[T](itemCount, itemEmbed))
+//      .add(Select(2, -1))
+//      .add(Linear(itemEmbed, numClasses))
 
     val rnn = Sequential[T]().setName("rnn")
     rnn.add(LookupTable[T](itemCount, itemEmbed))
@@ -50,17 +50,17 @@ class SessionRecommender[T: ClassTag](
 //    val rnnEmbeddedLayer = Sequential[T]().add(Select(2, 1)).add(rnnTable)
 
 
-//    val mlpItemTable = LookupTable[T](itemCount, itemEmbed)
-//    mlpItemTable.setWeightsBias(Array(Tensor[T](itemCount, itemEmbed).randn(0, 0.1)))
-//    val mlpEmbeddedLayer = Sequential[T]().add(mlpItemTable)
-//    mlp.add(mlpEmbeddedLayer)
-//    val linear1 = Linear[T](itemEmbed, mlpHiddenLayers(0))
-//    mlp.add(linear1).add(ReLU())
-//    for (i <- 1 until mlpHiddenLayers.length) {
-//      mlp.add(Linear(mlpHiddenLayers(i - 1), mlpHiddenLayers(i))).add(ReLU())
-//    }
+    val mlpItemTable = LookupTable[T](itemCount, itemEmbed)
+    mlpItemTable.setWeightsBias(Array(Tensor[T](itemCount, itemEmbed).randn(0, 0.1)))
+    val mlpEmbeddedLayer = Sequential[T]().add(mlpItemTable)
+    mlp.add(mlpEmbeddedLayer).add(Select(2, -1))
+    val linear1 = Linear[T](itemEmbed, mlpHiddenLayers(0))
+    mlp.add(linear1).add(ReLU())
+    for (i <- 1 until mlpHiddenLayers.length) {
+      mlp.add(Linear(mlpHiddenLayers(i - 1), mlpHiddenLayers(i))).add(ReLU())
+    }
 
-//    mlp.add(Linear(mlpHiddenLayers.last, numClasses))
+    mlp.add(Linear(mlpHiddenLayers.last, numClasses))
 
 
     //    model
@@ -139,11 +139,11 @@ object SessionRecommender {
 
     val trained_model = optimizer
       .setOptimMethod(new RMSprop[Float]())
-//      .setValidation(Trigger.everyEpoch, testRDD, Array(new Top5Accuracy[Float]()), batchSize)
+      .setValidation(Trigger.everyEpoch, testRDD, Array(new Top5Accuracy[Float]()), batchSize)
       .setEndWhen(Trigger.maxEpoch(maxEpoch))
       .optimize()
 
-    trained_model.saveModule(inputDir + rnnName + "Keras", null, overWrite = true)
+    trained_model.saveModule(inputDir + rnnName, null, overWrite = true)
     println("Model has been saved")
 
     trained_model
