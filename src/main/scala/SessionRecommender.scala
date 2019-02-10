@@ -19,7 +19,7 @@ import scala.reflect.ClassTag
   * @param numClasses The number of classes. Positive integer.
   * @param itemEmbed The output size of embedding layer. Positive integer.
   * @param mlpHiddenLayers Units of hidden layers for the mlp model. Array of positive integers. Default is Array(40, 20, 10).
-  * @param includeCF Whether to include purchase history. Boolean. Default is true.
+  * @param includeHistory Whether to include purchase history. Boolean. Default is true.
   * @param maxLength The max number of tokens
   */
 class SessionRecommender[T: ClassTag](
@@ -27,30 +27,14 @@ class SessionRecommender[T: ClassTag](
                              val numClasses: Int,
                              val itemEmbed: Int = 300,
                              val mlpHiddenLayers: Array[Int] = Array(40, 20, 10),
-                             val includeCF: Boolean = true,
+                             val includeHistory: Boolean = true,
                              val maxLength: Int = 10
                                      )(implicit ev: TensorNumeric[T])
   extends Recommender[T] {
 
   override def buildModel(): AbstractModule[Tensor[T], Tensor[T], T] = {
 
-    val fullModel = Sequential[T]()
-
-    val mlp = Sequential[T]().setName("mlp")
-
-    if includeCF {
-
-    }
-    val mlpItemTable = LookupTable[T](itemCount, itemEmbed)
-    mlpItemTable.setWeightsBias(Array(Tensor[T](itemCount, itemEmbed).randn(0, 0.1)))
-    val mlpEmbeddedLayer = Sequential[T]().add(mlpItemTable)
-    mlp.add(mlpEmbeddedLayer).add(Sum(2))
-    val linear1 = Linear[T](itemEmbed, mlpHiddenLayers(0))
-    mlp.add(linear1).add(ReLU())
-    for (i <- 1 until mlpHiddenLayers.length) {
-      mlp.add(Linear(mlpHiddenLayers(i - 1), mlpHiddenLayers(i))).add(ReLU())
-    }
-    mlp.add(Linear(mlpHiddenLayers.last, numClasses))
+    val model = Sequential[T]()
 
     val rnn = Sequential[T]().setName("rnn")
 
@@ -62,12 +46,30 @@ class SessionRecommender[T: ClassTag](
       .add(Select(2, -1))
       .add(Linear(200, numClasses))
 
-    fullModel
-      .add(ParallelTable().add(mlp).add(rnn))
-      .add(CAddTable()).add(LogSoftMax())
+    if (includeHistory) {
+      val mlp = Sequential[T]().setName("mlp")
 
-    fullModel.add(LogSoftMax())
-    fullModel.asInstanceOf[AbstractModule[Tensor[T], Tensor[T], T]]
+      val mlpItemTable = LookupTable[T](itemCount, itemEmbed)
+      mlpItemTable.setWeightsBias(Array(Tensor[T](itemCount, itemEmbed).randn(0, 0.1)))
+      val mlpEmbeddedLayer = Sequential[T]().add(mlpItemTable)
+      mlp.add(mlpEmbeddedLayer).add(Sum(2))
+      val linear1 = Linear[T](itemEmbed, mlpHiddenLayers(0))
+      mlp.add(linear1).add(ReLU())
+      for (i <- 1 until mlpHiddenLayers.length) {
+        mlp.add(Linear(mlpHiddenLayers(i - 1), mlpHiddenLayers(i))).add(ReLU())
+      }
+      mlp.add(Linear(mlpHiddenLayers.last, numClasses))
+
+      model
+        .add(ParallelTable().add(mlp).add(rnn))
+        .add(CAddTable())
+    }
+    else {
+      model.add(rnn)
+    }
+
+    model.add(LogSoftMax())
+    model.asInstanceOf[AbstractModule[Tensor[T], Tensor[T], T]]
   }
 }
 
@@ -80,7 +82,7 @@ object SessionRecommender {
     * @param itemEmbed The output size of embedding layer. Positive integer.
     * @param mlpHiddenLayers Units of hidden layers for the deep model. Array of positive integers.
     *                     Default is Array(40, 20, 10).
-    * @param includeCF Whether to include purchase history. Boolean. Default is true.
+    * @param includeHistory Whether to include purchase history. Boolean. Default is true.
     * @param maxLength The max number of tokens
     */
   def apply[@specialized(Float, Double) T: ClassTag](
@@ -88,7 +90,7 @@ object SessionRecommender {
       numClasses: Int,
       itemEmbed: Int,
       mlpHiddenLayers: Array[Int] = Array(200, 100, 100),
-      includeCF: Boolean = true,
+      includeHistory: Boolean = true,
       maxLength: Int = 10)
       (implicit ev: TensorNumeric[T]): SessionRecommender[T] = {
     new SessionRecommender[T](
@@ -96,7 +98,7 @@ object SessionRecommender {
       numClasses,
       itemEmbed,
       mlpHiddenLayers,
-      includeCF,
+      includeHistory,
       maxLength
     ).build()
   }

@@ -90,7 +90,7 @@ object SessionRecommenderExp {
       itemCount = itemCount,
       numClasses = outSize + 2,
       itemEmbed = params.embedOutDim,
-      includeCF = true,
+      includeHistory = true,
       maxLength = params.maxLength
     )
 
