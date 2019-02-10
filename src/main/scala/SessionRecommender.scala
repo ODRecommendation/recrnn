@@ -38,10 +38,13 @@ class SessionRecommender[T: ClassTag](
 
     val mlp = Sequential[T]().setName("mlp")
 
+    if includeCF {
+
+    }
     val mlpItemTable = LookupTable[T](itemCount, itemEmbed)
     mlpItemTable.setWeightsBias(Array(Tensor[T](itemCount, itemEmbed).randn(0, 0.1)))
     val mlpEmbeddedLayer = Sequential[T]().add(mlpItemTable)
-    mlp.add(mlpEmbeddedLayer).add(Select(2, -1))
+    mlp.add(mlpEmbeddedLayer).add(Sum(2))
     val linear1 = Linear[T](itemEmbed, mlpHiddenLayers(0))
     mlp.add(linear1).add(ReLU())
     for (i <- 1 until mlpHiddenLayers.length) {
@@ -61,7 +64,7 @@ class SessionRecommender[T: ClassTag](
 
     fullModel
       .add(ParallelTable().add(mlp).add(rnn))
-      .add(CAveTable()).add(LogSoftMax())
+      .add(CAddTable()).add(LogSoftMax())
 
     fullModel.add(LogSoftMax())
     fullModel.asInstanceOf[AbstractModule[Tensor[T], Tensor[T], T]]
@@ -83,8 +86,8 @@ object SessionRecommender {
   def apply[@specialized(Float, Double) T: ClassTag](
       itemCount: Int,
       numClasses: Int,
-      itemEmbed: Int = 20,
-      mlpHiddenLayers: Array[Int] = Array(40, 20, 10),
+      itemEmbed: Int,
+      mlpHiddenLayers: Array[Int] = Array(200, 100, 100),
       includeCF: Boolean = true,
       maxLength: Int = 10)
       (implicit ev: TensorNumeric[T]): SessionRecommender[T] = {

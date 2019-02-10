@@ -63,8 +63,8 @@ object SessionRecommenderExp {
 
     val params = ModelParams(
       maxLength = 10,
-      maxEpoch = 2,
-      batchSize = 64,
+      maxEpoch = 10,
+      batchSize = 1280,
       embedOutDim = 300,
       inputDir = "./modelFiles/",
       logDir = "./log/",
