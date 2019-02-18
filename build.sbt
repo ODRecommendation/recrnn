@@ -4,12 +4,14 @@ version := "0.1"
 
 scalaVersion := "2.11.12"
 
+resolvers += "ossrh repository" at "https://oss.sonatype.org/content/repositories/snapshots/"
+
 // set the main class for 'sbt run'
 mainClass := Some("Main")
 
-val sparkVersion = "2.3.1"
-val bigDLVersion = "0.7.1"
-val analyticsZooVersion = "0.3.0"
+val sparkVersion = "2.4.0"
+val bigDLVersion = "0.7.2"
+val analyticsZooVersion = "0.4.0"
 
 libraryDependencies ++= Seq(
   "org.apache.spark" %% "spark-core" % sparkVersion,
