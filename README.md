@@ -1,17 +1,23 @@
 # RNN RECOMMENDATION USING BIGDL AND SPARK
-A distributed rnn product recommendation implementation using BigDL and Spark. This recommendation algorithm only requires sequence of item agent has interacted as input therefore works with product recommendation for both identified / anonymous agent.
+A distributed rnn product recommendation implementation using BigDL and Spark. This recommendation can consider both customer's previous purchase history and current session behavior to cpture the latest purchase intent.
 
 ## Requirements
 ```scala
-val sparkVersion = "2.3.1"
-val analyticsZooVersion = "0.3.0"
+resolvers += "ossrh repository" at "https://oss.sonatype.org/content/repositories/snapshots/"
+
+// set the main class for 'sbt run'
+mainClass := Some("Main")
+
+val sparkVersion = "2.4.0"
+val bigDLVersion = "0.7.2"
+val analyticsZooVersion = "0.4.0"
 
 libraryDependencies ++= Seq(
   "org.apache.spark" %% "spark-core" % sparkVersion,
   "org.apache.spark" %% "spark-mllib" % sparkVersion,
   "org.apache.spark" %% "spark-sql" % sparkVersion
 )
-libraryDependencies += "com.intel.analytics.zoo" % "analytics-zoo-bigdl_0.7.1-spark_2.3.1" % analyticsZooVersion
+libraryDependencies += "com.intel.analytics.zoo" % s"analytics-zoo-bigdl_$bigDLVersion-spark_$sparkVersion" % analyticsZooVersion
 libraryDependencies += "ml.combust.mleap" %% "mleap-spark" % "0.12.0"
 libraryDependencies += "ml.combust.mleap" %% "mleap-spark-extension" % "0.12.0"
 libraryDependencies += "com.amazonaws" % "aws-java-sdk" % "1.11.354"
