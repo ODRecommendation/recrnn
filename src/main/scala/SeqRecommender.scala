@@ -45,6 +45,7 @@ class SeqRecommender[T: ClassTag](
       .add(Recurrent[T]().add(GRU(itemEmbed, 200)))
       .add(Select(2, -1))
       .add(Linear(200, numClasses))
+      .add(BatchNormalization(numClasses))
       .add(ReLU())
 
     if (includeHistory) {
@@ -55,14 +56,17 @@ class SeqRecommender[T: ClassTag](
       val mlpEmbeddedLayer = Sequential[T]().add(mlpItemTable)
       mlp.add(mlpEmbeddedLayer).add(Sum(2))
       val linear1 = Linear[T](itemEmbed, mlpHiddenLayers(0))
-      mlp.add(linear1).add(ReLU())
+      mlp.add(linear1).add(BatchNormalization(mlpHiddenLayers(0))).add(ReLU())
       for (i <- 1 until mlpHiddenLayers.length) {
-        mlp.add(Linear(mlpHiddenLayers(i - 1), mlpHiddenLayers(i))).add(ReLU())
+        mlp.add(Linear(mlpHiddenLayers(i - 1), mlpHiddenLayers(i)))
+          .add(BatchNormalization(mlpHiddenLayers(i)))
+          .add(ReLU())
       }
-      mlp.add(Linear(mlpHiddenLayers.last, numClasses)).add(ReLU())
+      mlp.add(Linear(mlpHiddenLayers.last, numClasses))
+        .add(BatchNormalization(numClasses))
+        .add(ReLU())
 
-      model
-        .add(ParallelTable().add(mlp).add(rnn))
+      model.add(ParallelTable().add(mlp).add(rnn))
         .add(CAddTable())
     }
     else {
