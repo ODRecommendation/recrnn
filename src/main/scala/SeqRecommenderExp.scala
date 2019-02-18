@@ -45,7 +45,7 @@ case class SeqRecommenderParams(
                         rnnName: String
                       )
 
-object SessionRecommenderExp {
+object SeqRecommenderExp {
 
   private val s3client = AmazonS3ClientBuilder.standard()
     .withRegion(Regions.CN_NORTH_1)
