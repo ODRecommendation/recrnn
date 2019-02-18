@@ -28,15 +28,18 @@ libraryDependencies += "org.scalatest" %% "scalatest" % "3.0.5" % "test"
 ## How to use
 Run model on your own data by replacing below value, if leave them blank model will run on provided sample data under modelFiles folder
 ```scala
-    val params = ModelParams(
+   val params = SeqRecommenderParams(
       maxLength = 10,
       maxEpoch = 10,
-      batchSize = 2560,
-      embedOutDim = 200,
+      batchSize = 1280,
+      embedOutDim = 300,
       inputDir = "./modelFiles/",
       logDir = "./log/",
-      dataName = "recrnn.csv",
-      stringIndexerName = "skuIndexer",
+      rnnData = "rnnData.csv",
+      ncfData = "ncfData.csv",
+      lookUpFileName = "skuLookUp",
+      userIndexerName = "userIndexer",
+      itemIndexerName = "itemIndexer",
       rnnName = "rnnModel"
     )
 ```
