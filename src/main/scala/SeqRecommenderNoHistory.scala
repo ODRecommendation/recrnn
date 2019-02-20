@@ -24,28 +24,28 @@ import resource.managed
 import scala.collection.mutable
 
 /**
-  * Created by luyangwang on Dec, 2018
+  * Created by luyangwang on Feb, 2019
   *
   */
+case class SeqRecommenderNoHistory (
+                                     maxLength: Int,
+                                     maxEpoch: Int,
+                                     batchSize: Int,
+                                     embedOutDim: Int,
+                                     learningRate: Double = 1e-3,
+                                     learningRateDecay: Double = 1e-6,
+                                     inputDir: String,
+                                     logDir: String,
+                                     rnnData1: String,
+                                     rnnData2: String,
+                                     rnnData3: String,
+                                     lookUpFileName: String,
+                                     userIndexerName: String,
+                                     itemIndexerName: String,
+                                     rnnName: String
+                                   )
 
-case class SeqRecommenderParams(
-                        maxLength: Int,
-                        maxEpoch: Int,
-                        batchSize: Int,
-                        embedOutDim: Int,
-                        learningRate: Double = 1e-3,
-                        learningRateDecay: Double = 1e-6,
-                        inputDir: String,
-                        logDir: String,
-                        rnnData: String,
-                        ncfData: String,
-                        lookUpFileName: String,
-                        userIndexerName: String,
-                        itemIndexerName: String,
-                        rnnName: String
-                      )
-
-object SeqRecommenderExp {
+object SeqRecommenderNoHistory {
 
   private val s3client = AmazonS3ClientBuilder.standard()
     .withRegion(Regions.CN_NORTH_1)
@@ -61,36 +61,39 @@ object SeqRecommenderExp {
     System.setProperty("log4j.appender.NotConsole.fileName","./model.log")
     System.setProperty("log4j.appender.NotConsole.maxFileSize","20MB")
 
-    val params = SeqRecommenderParams(
+    val params = SeqRecommenderNoHistory(
       maxLength = 10,
-      maxEpoch = 10,
-      batchSize = 1280,
+      maxEpoch = 20,
+      batchSize = 12800,
       embedOutDim = 300,
-      inputDir = "./modelFiles/",
-      logDir = "./log/",
-      rnnData = "rnnData.csv",
-      ncfData = "ncfData.csv",
+      inputDir = "s3://philipsbigdata/data/",
+      logDir = "s3://philipsbigdata/log/",
+      rnnData1 = "rnn30.csv",
+      rnnData2 = "rnn111725.csv",
+      rnnData3 = "rnn12250102.csv",
       lookUpFileName = "skuLookUpNoHistory",
       userIndexerName = "userIndexer",
       itemIndexerName = "itemIndexer",
-      rnnName = "rnnModel"
+      rnnName = "rnnModelNoHistory"
     )
 
     // construct BigDL session
     val conf = new SparkConf()
       .setAppName("recRNN")
-      .setMaster("local[*]")
-      .set("spark.driver.memory", "100g")
+//      .setMaster("local[*]")
+//      .set("spark.driver.memory", "100g")
     val sc = NNContext.initNNContext(conf)
     val spark = SparkSession.builder().config(sc.getConf).getOrCreate()
 
-    val (sessionDF, historyDF, userCount, itemCount, userIndexerModel,itemIndexerModel) = loadPublicData(spark, params)
-    val (trainSample, outSize) = assemblyFeature(sessionDF, historyDF, userCount, itemCount, userIndexerModel, itemIndexerModel, params)
+    val (sessionDF, itemCount, itemIndexerModel) = loadPublicData(spark, params)
+
+//    val (sessionDF, historyDF, userCount, itemCount, userIndexerModel,itemIndexerModel) = loadPublicData(spark, params)
+    val (trainSample, outSize) = assemblyFeature(sessionDF, itemCount, itemIndexerModel, params)
     val sr = SeqRecommender[Float](
       itemCount = itemCount,
       numClasses = outSize + 2,
       itemEmbed = params.embedOutDim,
-      includeHistory = true,
+      includeHistory = false,
       maxLength = params.maxLength
     )
 
@@ -121,69 +124,75 @@ object SeqRecommenderExp {
   }
 
   //  Load data using spark session interface
-  def loadPublicData(spark: SparkSession, params: SeqRecommenderParams) = {
+  def loadPublicData(spark: SparkSession, params: SeqRecommenderNoHistory) = {
     // stringIndex SKU number
-    val sessionDF = spark.read.options(Map("header" -> "true", "delimiter" -> ",")).csv(params.inputDir + params.rnnData)
-    sessionDF.printSchema()
-    val historyDF = spark.read.options(Map("header" -> "true", "delimiter" -> ",")).csv(params.inputDir + params.ncfData)
-    historyDF.printSchema()
+    val rnnDF1 = spark.read.options(Map("header" -> "true", "delimiter" -> ",")).csv(params.inputDir + params.rnnData1)
+    val rnnDF2 = spark.read.options(Map("header" -> "true", "delimiter" -> ",")).csv(params.inputDir + params.rnnData2)
+    val rnnDF3 = spark.read.options(Map("header" -> "true", "delimiter" -> ",")).csv(params.inputDir + params.rnnData3)
 
-    val userCount = historyDF.select("AGENT_ID").distinct().count().toInt + 1
-    println("userCount = " + userCount)
-    val itemCount = sessionDF.select("SKU_NUM").distinct().count().toInt + 1
+    val rnnDF = rnnDF1.union(rnnDF2).union(rnnDF3)
+      .select("sessionId", "_time", "ViewSKU").distinct().orderBy("sessionId", "_time")
+      .select("sessionId", "ViewSKU").distinct()
+    val filtered = rnnDF.groupBy("sessionId").count().filter(col("count") > 1)
+
+    val sessionDF = filtered.join(rnnDF, Array("sessionId")).drop("count")
+    sessionDF.printSchema()
+    sessionDF.show(false)
+
+//    val userCount = historyDF.select("AGENT_ID").distinct().count().toInt + 1
+//    println("userCount = " + userCount)
+    val itemCount = sessionDF.select("ViewSKU").distinct().count().toInt + 1
     println("itemCount = " + itemCount)
-    val userIndexer = new StringIndexer().setInputCol("AGENT_ID").setOutputCol("userId").setHandleInvalid("keep")
-    val itemIndexer = new StringIndexer().setInputCol("SKU_NUM").setOutputCol("SKU_INDEX").setHandleInvalid("keep")
-    val userIndexerModel = userIndexer.fit(historyDF)
+//    val userIndexer = new StringIndexer().setInputCol("AGENT_ID").setOutputCol("userId").setHandleInvalid("keep")
+    val itemIndexer = new StringIndexer().setInputCol("ViewSKU").setOutputCol("SKU_INDEX").setHandleInvalid("keep")
+//    val userIndexerModel = userIndexer.fit(historyDF)
     val itemIndexerModel = itemIndexer.fit(sessionDF)
-    userIndexerModel.write.overwrite().save(params.inputDir + params.userIndexerName)
+//    userIndexerModel.write.overwrite().save(params.inputDir + params.userIndexerName)
     itemIndexerModel.write.overwrite().save(params.inputDir + params.itemIndexerName)
-    saveToMleap(itemIndexerModel, sessionDF, params.inputDir + params.userIndexerName)
-    saveToMleap(itemIndexerModel, sessionDF, params.inputDir + params.userIndexerName)
+//    saveToMleap(itemIndexerModel, sessionDF, params.inputDir + params.userIndexerName)
+//    saveToMleap(itemIndexerModel, sessionDF, params.itemIndexerName)
     println("SkuIndexerModel has been saved")
-    (sessionDF, historyDF, userCount, itemCount, userIndexerModel, itemIndexerModel)
+//    putS3Obj("philipsbigdata", "itemIndexerMleap", params.itemIndexerName)
+//    (sessionDF, historyDF, userCount, itemCount, userIndexerModel, itemIndexerModel)
+    (sessionDF, itemCount, itemIndexerModel)
   }
 
   // convert features to RDD[Sample[FLoat]]
   def assemblyFeature(
                        sessionDF: DataFrame,
-                       historyDF: DataFrame,
-                       userCount: Int,
                        itemCount: Int,
-                       userIndexerModel: StringIndexerModel,
                        itemIndexerModel: StringIndexerModel,
-                       params: SeqRecommenderParams
+                       params: SeqRecommenderNoHistory
                      ) = {
-//    val joined = sessionDF.join(historyDF, Array("AGENT_ID")).distinct()
-//    joined.show()
+    //    val joined = sessionDF.join(historyDF, Array("AGENT_ID")).distinct()
+    //    joined.show()
     // stringIndex the sku number and adjust the starting index to 1
     val indexedSessionDF = itemIndexerModel
       .transform(sessionDF)
       .withColumn("SKU_INDEX", col("SKU_INDEX") + 2)
-    val indexedHistoryDF = itemIndexerModel.transform(historyDF)
-      .withColumn("SKU_INDEX", col("SKU_INDEX") + 2)
-      .select("AGENT_ID", "SKU_INDEX")
 
     // save lookUp table for index to string revert
-    val lookUp = indexedSessionDF.select("SKU_NUM", "SKU_INDEX").distinct()
+    val lookUp = indexedSessionDF.select("ViewSKU", "SKU_INDEX").distinct()
       .rdd.map(x => {
       val text = x.getString(0)
       val label = x.getAs[Double](1)
       (text, label)
-    }).collect()
+    })
+//      .collect()
 
-    val file = params.inputDir + params.lookUpFileName
-    val writer = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(file)))
-    for (x <- lookUp) {
-      writer.write(x._1 + " " + x._2 + "\n")
-    }
-    writer.close()
+    lookUp.saveAsTextFile(params.inputDir + params.lookUpFileName)
+//    val file = params.inputDir + params.lookUpFileName
+//    val writer = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(file)))
+//    for (x <- lookUp) {
+//      writer.write(x._1 + " " + x._2 + "\n")
+//    }
+//    writer.close()
 
     indexedSessionDF.show()
     indexedSessionDF.printSchema()
 
     // collect item to sequence
-    val seqDF = indexedSessionDF.groupBy("SESSION_ID", "AGENT_ID")
+    val seqDF = indexedSessionDF.groupBy("sessionId")
       .agg(collect_list("SKU_INDEX").alias("sku"))
       .filter(col("sku").isNotNull)
 
@@ -206,7 +215,7 @@ object SeqRecommenderExp {
     val rnnDF = seqDF
       .withColumn("rnnItem", prePaddingUDF(col("sku")))
       .withColumn("label", getLabelUDF(col("sku")))
-      .select("AGENT_ID", "rnnItem", "label")
+      .select("sessionId", "rnnItem", "label")
 
     rnnDF.show(false)
     rnnDF.printSchema()
@@ -214,28 +223,18 @@ object SeqRecommenderExp {
     val outSize = rnnDF.rdd.map(_.getAs[Float]("label")).max.toInt
     println(outSize)
 
-    val seqDF1 = indexedHistoryDF.groupBy("AGENT_ID")
-      .agg(collect_list("SKU_INDEX").alias("history"))
-      .filter(col("history").isNotNull)
-
-    val cfDF = seqDF1.withColumn("history", prePaddingUDF(col("history")))
-    cfDF.show()
-
-    val joined = cfDF.join(rnnDF, Array("AGENT_ID")).distinct()
+    val joined = rnnDF
     joined.show(false)
 
     // dataFrame to sample
     val trainSample = joined.rdd.map(r => {
       val label = Tensor[Float](T(r.getAs[Float]("label")))
-      val mlpFeature = r.getAs[mutable.WrappedArray[java.lang.Float]]("history").array.map(_.toFloat)
       val rnnFeature = r.getAs[mutable.WrappedArray[java.lang.Float]]("rnnItem").array.map(_.toFloat)
-      val mlpSample = Tensor(mlpFeature, Array(params.maxLength))
       val rnnSample = Tensor(rnnFeature, Array(params.maxLength))
-      TensorSample[Float](Array(mlpSample, rnnSample), Array(label))
+      TensorSample[Float](Array(rnnSample), Array(label))
     })
 
     println("Sample feature print: \n"+ trainSample.take(1).head.feature(0))
-    println("Sample feature print: \n"+ trainSample.take(1).head.feature(1))
     println("Sample label print: \n" + trainSample.take(1).head.label())
 
     (trainSample, outSize)

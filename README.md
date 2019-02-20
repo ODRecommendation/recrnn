@@ -37,7 +37,7 @@ Run model on your own data by replacing below value, if leave them blank model w
       logDir = "./log/",
       rnnData = "rnnData.csv",
       ncfData = "ncfData.csv",
-      lookUpFileName = "skuLookUp",
+      lookUpFileName = skuLookUpNoHistory,
       userIndexerName = "userIndexer",
       itemIndexerName = "itemIndexer",
       rnnName = "rnnModel"
