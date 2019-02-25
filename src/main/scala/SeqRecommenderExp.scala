@@ -86,7 +86,7 @@ object SeqRecommenderExp {
 
     val (sessionDF, historyDF, userCount, itemCount, userIndexerModel,itemIndexerModel) = loadPublicData(spark, params)
     val (trainSample, outSize) = assemblyFeature(sessionDF, historyDF, userCount, itemCount, userIndexerModel, itemIndexerModel, params)
-    val sr = SeqRecommender[Float](
+    val sr = SeqRecommenderKeras[Float](
       itemCount = itemCount,
       numClasses = outSize + 2,
       itemEmbed = params.embedOutDim,

@@ -9,9 +9,9 @@ resolvers += "ossrh repository" at "https://oss.sonatype.org/content/repositorie
 // set the main class for 'sbt run'
 mainClass := Some("SeqRecommenderExp")
 
-val sparkVersion = "2.4.0"
-val bigDLVersion = "0.7.2"
-val analyticsZooVersion = "0.4.0"
+val sparkVersion = "2.3.1"
+val bigDLVersion = "0.7.1"
+val analyticsZooVersion = "0.3.0"
 val scalaTestVersion = "3.0.5"
 val mleapVersion = "0.12.0"
 val awsJavaSdkVersion = "1.11.500"
