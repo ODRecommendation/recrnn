@@ -18,6 +18,8 @@ src_managed/
 project/boot/
 project/plugins/project/
 logs/
+modelFiles/*
+data/*
 project/*-shim.sbt
 project/project/
 project/target/

@@ -4,7 +4,7 @@ version := "0.1"
 
 scalaVersion := "2.11.12"
 
-resolvers += "ossrh repository" at "https://oss.sonatype.org/content/repositories/snapshots/"
+//resolvers += "ossrh repository" at "https://oss.sonatype.org/content/repositories/snapshots/"
 
 // set the main class for 'sbt run'
 mainClass := Some("SeqRecommenderExp")
@@ -21,7 +21,7 @@ libraryDependencies ++= Seq(
   "org.apache.spark" %% "spark-mllib" % sparkVersion,
   "org.apache.spark" %% "spark-sql" % sparkVersion
 )
-libraryDependencies += "com.intel.analytics.zoo" % s"analytics-zoo-bigdl_$bigDLVersion-spark_$sparkVersion" % analyticsZooVersion
+libraryDependencies += "com.intel.analytics.zoo" % s"analytics-zoo-bigdl_$bigDLVersion-spark_$sparkVersion" % analyticsZooVersion withSources() withJavadoc()
 libraryDependencies += "ml.combust.mleap" %% "mleap-spark" % mleapVersion
 libraryDependencies += "ml.combust.mleap" %% "mleap-spark-extension" % mleapVersion
 libraryDependencies += "com.amazonaws" % "aws-java-sdk" % awsJavaSdkVersion

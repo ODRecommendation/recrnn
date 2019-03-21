@@ -9,6 +9,7 @@ import com.intel.analytics.bigdl.optim._
 import com.intel.analytics.bigdl.tensor.Tensor
 import com.intel.analytics.bigdl.utils.T
 import com.intel.analytics.zoo.common.NNContext
+import com.intel.analytics.zoo.models.recommendation.NeuralCF
 import com.intel.analytics.zoo.pipeline.api.keras.objectives.SparseCategoricalCrossEntropy
 import ml.combust.bundle.BundleFile
 import ml.combust.mleap.spark.SparkSupport._
@@ -16,9 +17,10 @@ import org.apache.log4j.{Level, Logger}
 import org.apache.spark.SparkConf
 import org.apache.spark.ml.bundle.SparkBundleContext
 import org.apache.spark.ml.feature.{StringIndexerModel, _}
+import org.apache.spark.ml.linalg.{BLAS, DenseVector, SparseVector, Vectors}
 import org.apache.spark.ml.mleap.SparkUtil
 import org.apache.spark.sql.functions._
-import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.{DataFrame, Dataset, Row, SparkSession}
 import resource.managed
 
 import scala.collection.mutable
@@ -76,6 +78,8 @@ object SeqRecommenderExp {
       rnnName = "rnnModel"
     )
 
+    new Word2Vec()
+
     // construct BigDL session
     val conf = new SparkConf()
       .setAppName("recRNN")
@@ -84,9 +88,9 @@ object SeqRecommenderExp {
     val sc = NNContext.initNNContext(conf)
     val spark = SparkSession.builder().config(sc.getConf).getOrCreate()
 
-    val (sessionDF, historyDF, userCount, itemCount, userIndexerModel,itemIndexerModel) = loadPublicData(spark, params)
-    val (trainSample, outSize) = assemblyFeature(sessionDF, historyDF, userCount, itemCount, userIndexerModel, itemIndexerModel, params)
-    val sr = SeqRecommenderKeras[Float](
+    val (sessionDF, historyDF, userCount, itemCount, userIndexerModel,itemIndexerModel, itemOHE) = loadPublicData(spark, params)
+    val (trainSample, outSize) = assemblyFeature(sessionDF, historyDF, userCount, itemCount, userIndexerModel, itemIndexerModel, itemOHE, params)
+    val sr = SessionRecommender[Float](
       itemCount = itemCount,
       numClasses = outSize + 2,
       itemEmbed = params.embedOutDim,
@@ -134,6 +138,7 @@ object SeqRecommenderExp {
     println("itemCount = " + itemCount)
     val userIndexer = new StringIndexer().setInputCol("AGENT_ID").setOutputCol("userId").setHandleInvalid("keep")
     val itemIndexer = new StringIndexer().setInputCol("SKU_NUM").setOutputCol("SKU_INDEX").setHandleInvalid("keep")
+    val itemOHE = new OneHotEncoder().setInputCol("SKU_INDEX").setOutputCol("SKU_VEC")
     val userIndexerModel = userIndexer.fit(historyDF)
     val itemIndexerModel = itemIndexer.fit(sessionDF)
     userIndexerModel.write.overwrite().save(params.inputDir + params.userIndexerName)
@@ -141,7 +146,7 @@ object SeqRecommenderExp {
     saveToMleap(itemIndexerModel, sessionDF, params.inputDir + params.userIndexerName)
     saveToMleap(itemIndexerModel, sessionDF, params.inputDir + params.userIndexerName)
     println("SkuIndexerModel has been saved")
-    (sessionDF, historyDF, userCount, itemCount, userIndexerModel, itemIndexerModel)
+    (sessionDF, historyDF, userCount, itemCount, userIndexerModel, itemIndexerModel, itemOHE)
   }
 
   // convert features to RDD[Sample[FLoat]]
@@ -152,6 +157,7 @@ object SeqRecommenderExp {
                        itemCount: Int,
                        userIndexerModel: StringIndexerModel,
                        itemIndexerModel: StringIndexerModel,
+                       itemOHE: OneHotEncoder,
                        params: SeqRecommenderParams
                      ) = {
 //    val joined = sessionDF.join(historyDF, Array("AGENT_ID")).distinct()
@@ -162,7 +168,8 @@ object SeqRecommenderExp {
       .withColumn("SKU_INDEX", col("SKU_INDEX") + 2)
     val indexedHistoryDF = itemIndexerModel.transform(historyDF)
       .withColumn("SKU_INDEX", col("SKU_INDEX") + 2)
-      .select("AGENT_ID", "SKU_INDEX")
+      .select("AGENT_ID", "SKU_INDEX").distinct()
+    val indexedHistoryDF1 = itemOHE.transform(indexedHistoryDF).select("AGENT_ID", "SKU_VEC")
 
     // save lookUp table for index to string revert
     val lookUp = indexedSessionDF.select("SKU_NUM", "SKU_INDEX").distinct()
@@ -203,6 +210,11 @@ object SeqRecommenderExp {
     }
     val getLabelUDF = udf(getLabel)
 
+    def sparseVecToDense: SparseVector => DenseVector = x => {
+      x.toDense
+    }
+    val sparseVecToArrayUDF = udf(sparseVecToDense)
+
     val rnnDF = seqDF
       .withColumn("rnnItem", prePaddingUDF(col("sku")))
       .withColumn("label", getLabelUDF(col("sku")))
@@ -218,15 +230,44 @@ object SeqRecommenderExp {
       .agg(collect_list("SKU_INDEX").alias("history"))
       .filter(col("history").isNotNull)
 
-    val cfDF = seqDF1.withColumn("history", prePaddingUDF(col("history")))
-    cfDF.show()
+//    def transform(dataset: Dataset[_]): DataFrame = {
+//      transformSchema(dataset.schema, logging = true)
+//      val vectors = wordVectors.getVectors
+//        .mapValues(vv => Vectors.dense(vv.map(_.toDouble)))
+//        .map(identity) // mapValues doesn't return a serializable map (SI-7005)
+//      val bVectors = dataset.sparkSession.sparkContext.broadcast(vectors)
+//      val d = $(vectorSize)
+//      val word2Vec = udf { sentence: Seq[String] =>
+//        if (sentence.isEmpty) {
+//          Vectors.sparse(d, Array.empty[Int], Array.empty[Double])
+//        } else {
+//          val sum = Vectors.zeros(d)
+//          sentence.foreach { word =>
+//            bVectors.value.get(word).foreach { v =>
+//              BLAS.axpy(1.0, v, sum)
+//            }
+//          }
+//          BLAS.scal(1.0 / sentence.size, sum)
+//          sum
+//        }
+//      }
+//      dataset.withColumn($(outputCol), word2Vec(col($(inputCol))))
+//    }
 
-    val joined = cfDF.join(rnnDF, Array("AGENT_ID")).distinct()
+//    val seqDF1 = indexedHistoryDF1.rdd.map{ case Row(k: String, v: SparseVector) => (k, BDV(v.toDense))}
+
+    seqDF1.show()
+
+//    val cfDF = seqDF1.withColumn("history", prePaddingUDF(col("history")))
+//    cfDF.show()
+
+    val joined = seqDF1.join(rnnDF, Array("AGENT_ID")).distinct()
     joined.show(false)
 
     // dataFrame to sample
     val trainSample = joined.rdd.map(r => {
       val label = Tensor[Float](T(r.getAs[Float]("label")))
+//      val mlpFeature = r.getAs[mutable.WrappedArray[java.lang.Float]]("history").array.map(_.toFloat)
       val mlpFeature = r.getAs[mutable.WrappedArray[java.lang.Float]]("history").array.map(_.toFloat)
       val rnnFeature = r.getAs[mutable.WrappedArray[java.lang.Float]]("rnnItem").array.map(_.toFloat)
       val mlpSample = Tensor(mlpFeature, Array(params.maxLength))
